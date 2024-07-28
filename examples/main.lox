@@ -8,4 +8,14 @@
 world"
 .122.34
 
-12
+1a2
+var message = "mrdka";
+
+
+fun main() {
+    if (12 <= 13) {
+        for (var i = 0; i < 10; i = i + 1) {
+            print i;
+        }
+    }
+}

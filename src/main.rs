@@ -43,7 +43,7 @@ enum TokenKind {
     Greater, GreaterEqual,
     Less, LessEqual,
     // Literals
-    Identifier, String(String), Int(i32), Double(f64),
+    Identifier(String), String(String), Int(i32), Double(f64),
     // Keyword
     Class, Fun, Return,
     If, Else, While, For, 
@@ -73,7 +73,7 @@ impl std::fmt::Display for Token {
     }
 }
 
-struct Scanner {
+struct Lexer {
     source: String,
     tokens: Vec<Token>,
     file: String,
@@ -83,9 +83,9 @@ struct Scanner {
     err_reports: Vec<(Location, String)>,
 }
 
-impl Scanner {
+impl Lexer {
     pub fn new() -> Self {
-        Scanner {
+        Lexer {
             tokens: Vec::new(),
             source: String::new(),
             file: String::new(),
@@ -190,12 +190,40 @@ impl Scanner {
         }
     }
 
-    pub fn scan(&mut self, filepath: String) {
+    fn handle_indentifier(&mut self) {
+        let start = self.current - 1;
+        while self.peek().is_ascii_alphanumeric() || self.peek() == '_' {
+            self.advance();
+        }
+        let sub_str = self.source.get(start..self.current).unwrap();
+        let kind = match sub_str {
+            "class"  => TokenKind::Class,
+            "fun"    => TokenKind::Fun,
+            "return" => TokenKind::Return,
+            "if"     => TokenKind::If,
+            "else"   => TokenKind::Else,
+            "while"  => TokenKind::While,
+            "for"    => TokenKind::For,
+            "false"  => TokenKind::False,
+            "true"   => TokenKind::True,
+            "nil"    => TokenKind::Nil,
+            "and"    => TokenKind::And,
+            "or"     => TokenKind::Or,
+            "print"  => TokenKind::Print,
+            "this"   => TokenKind::This,
+            "super"  => TokenKind::Super,
+            "var"    => TokenKind::Var,
+            _        => TokenKind::Identifier(sub_str.to_string()),
+        };
+        self.add_token(kind);
+    }
+
+    pub fn lex_file(&mut self, filepath: String) {
         let source: String = fs::read_to_string(&filepath).unwrap();
         self.file = filepath;
         self.source = source;
         while !self.is_at_end() {
-            self.scan_token()
+            self.lex_token();
         }
 
         for t in &self.tokens {
@@ -207,7 +235,7 @@ impl Scanner {
         }
     }
 
-    fn scan_token(&mut self) {
+    fn lex_token(&mut self) {
         let loc = Location::create(self.file.clone(), self.line, self.col);
         let c: char = self.advance();
         match c {
@@ -250,7 +278,9 @@ impl Scanner {
                 }
             }
         //Number
-            '0'..='9' => self.handle_number(),
+            c if c.is_numeric()  => self.handle_number(),
+        //Identifier
+            c if c.is_ascii_alphabetic() => self.handle_indentifier(),
         //Whitespace
             '\r' | '\t' | ' ' => {},
             '\n' => {
@@ -274,8 +304,8 @@ fn main() -> Result<(), Error> {
     }
 
     let file = args.source_files.first().unwrap();
-    let mut scanner = Scanner::new();
-    scanner.scan(file.clone());
+    let mut lexer= Lexer::new();
+    lexer.lex_file(file.clone());
 
     Ok(())
 }
