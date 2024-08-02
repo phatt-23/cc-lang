@@ -2,7 +2,7 @@
 #[derive(Debug, Clone)]
 pub enum LitVal { Int(i32), Double(f64), String(String), Bool(bool), Nil }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Expr {
     Literal  { value: LitVal },
     Grouping { expr: Box<Expr> },
@@ -237,14 +237,15 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new() -> Self {
         Self {
-            tokens,
+            tokens: Vec::new(),
             current: 0,
         }
     }
     
-    pub fn parse(&mut self) -> Result<Expr, String> {
+    pub fn parse(&mut self, tokens: Vec<Token>) -> Result<Expr, String> {
+	self.tokens = tokens;
         self.expression()
     }
 
@@ -333,30 +334,15 @@ impl Parser {
     }
 
     fn factor(&mut self) -> Result<Expr, String> {
-	let mut expr = self.unary()?;
-	use TokenKind::*;
-	let mut operations = Vec::new();
-
-	while matches!(self.peek().kind(), Star | Slash) {
+        let mut expr = self.unary()?;
+        use TokenKind::*;
+        while matches!(self.peek().kind(), Star | Slash) {
             self.advance();
             let op = self.previous()?.clone();
             let right = self.unary()?;
-            operations.push((op, right));
-	}
-
-	for (op, right) in operations.iter() {
-            if matches!(op.kind(), Slash) {
-		expr = Expr::new_binary(expr, op.clone(), right.clone());
-            }
-	}
-
-	for (op, right) in operations.into_iter() {
-            if matches!(op.kind(), Star) {
-		expr = Expr::new_binary(expr, op, right);
-            }
-	}
-
-	Ok(expr)
+            expr = Expr::new_binary(expr, op, right);
+        }
+        Ok(expr)
     }
 
     fn unary(&mut self) -> Result<Expr, String> {
