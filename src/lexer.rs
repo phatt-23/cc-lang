@@ -25,6 +25,7 @@ impl Lexer {
         }
     }
 
+    //Helpers ----------------------------------------------------
     fn report_err(&mut self, loc: Location, message: String) {
         self.err_reports.push((loc, message));
     }
@@ -32,7 +33,11 @@ impl Lexer {
     fn advance(&mut self) -> char {
         self.current += 1;
         self.col += 1;
-        self.source.chars().nth(self.current - 1).unwrap()
+        self.source.chars().nth(self.current - 1).unwrap_or_else(|| {
+            let loc = Location::create(self.file.clone(), self.line - 1, self.col);
+            self.report_err(loc, "Function advance() failed to read character.".to_string());
+            '\0'
+        })
     }
 
     fn is_at_end(&self) -> bool {
@@ -68,6 +73,7 @@ impl Lexer {
         self.tokens.push(tok);
     }
 
+    //Literals ------------------------------------------------------
     fn handle_string(&mut self) {
         let start = self.current;
         while self.peek() != '"' && !self.is_at_end() {
@@ -156,11 +162,30 @@ impl Lexer {
         }
 
         for t in &self.tokens {
-            println!("[INFO] {}", t);
+            println!("[INFO][lexer] {}", t);
         }
 
         for e in &self.err_reports {
-            println!("[ERROR] {} {}", e.0, e.1);
+            println!("[ERROR][lexer] {} {}", e.0, e.1);
+        }
+        
+        self.add_token(TokenKind::Eof);
+        self.tokens.clone()
+    }
+
+    pub fn lex_stdin(&mut self, stream: String) -> Vec<Token> {
+        self.source = stream;
+	self.file = String::from("stdin");
+        while !self.is_at_end() {
+            self.lex_token();
+        }
+
+        for t in &self.tokens {
+            println!("[INFO][lexer] {}", t);
+        }
+
+        for e in &self.err_reports {
+            println!("[ERROR][lexer] {} {}", e.0, e.1);
         }
         
         self.add_token(TokenKind::Eof);
@@ -213,15 +238,16 @@ impl Lexer {
             c if c.is_numeric()  => self.handle_number(),
         //Identifier
             c if c.is_ascii_alphabetic() => self.handle_indentifier(),
-        //Whitespace
-            '\r' | '\t' | ' ' => {},
+        //Whitespace 
+        //todo: I dont know if '\0' should be considered whitespace
+            '\r' | '\t' | '\0' | ' ' => {},
             '\n' => {
                 self.line += 1;
                 self.col = 0;
             }
         //String Literals
             '"' => self.handle_string(),
-            _ => self.report_err(loc, "Unexpected character".to_string())
+            unexpected_char => self.report_err(loc, format!("{} ({}) Unexpected character", unexpected_char, unexpected_char as i32))
         }
     }
 }

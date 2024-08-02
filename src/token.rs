@@ -38,6 +38,10 @@ impl Token {
     pub fn kind(&self) -> &TokenKind {
         &self.kind
     }
+
+    pub fn loc(&self) -> &Location {
+        &self.loc
+    }
 }
 
 impl std::fmt::Display for Token {
