@@ -1,4 +1,3 @@
-use std::fs;
 use crate::token::{Token, TokenKind};
 use crate::location::Location;
 
@@ -23,6 +22,24 @@ impl Lexer {
             current: 0,
             err_reports: Vec::new(),
         }
+    }
+
+    pub fn lex(&mut self, filepath: String, source: String) -> Vec<Token> {
+        self.file = filepath;
+        self.source = source;
+        while !self.is_at_end() {
+            self.lex_token();
+        }
+        // println!("[INFO][lexer]");
+        // for t in &self.tokens {
+        //     println!("  {}", t);
+        // }
+        for e in &self.err_reports {
+            println!("[ERROR][lexer] {} {}", e.0, e.1);
+        }
+        
+        self.add_token(TokenKind::Eof);
+        self.tokens.clone()
     }
 
     //Helpers ----------------------------------------------------
@@ -153,44 +170,6 @@ impl Lexer {
         self.add_token(kind);
     }
 
-    pub fn lex_file(&mut self, filepath: String) -> Vec<Token> {
-        let source: String = fs::read_to_string(&filepath).unwrap();
-        self.file = filepath;
-        self.source = source;
-        while !self.is_at_end() {
-            self.lex_token();
-        }
-
-        for t in &self.tokens {
-            println!("[INFO][lexer] {}", t);
-        }
-
-        for e in &self.err_reports {
-            println!("[ERROR][lexer] {} {}", e.0, e.1);
-        }
-        
-        self.add_token(TokenKind::Eof);
-        self.tokens.clone()
-    }
-
-    pub fn lex_stdin(&mut self, stream: String) -> Vec<Token> {
-        self.source = stream;
-	self.file = String::from("stdin");
-        while !self.is_at_end() {
-            self.lex_token();
-        }
-
-        for t in &self.tokens {
-            println!("[INFO][lexer] {}", t);
-        }
-
-        for e in &self.err_reports {
-            println!("[ERROR][lexer] {} {}", e.0, e.1);
-        }
-        
-        self.add_token(TokenKind::Eof);
-        self.tokens.clone()
-    }
 
     fn lex_token(&mut self) {
         let loc = Location::create(self.file.clone(), self.line, self.col);

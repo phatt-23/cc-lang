@@ -1,8 +1,10 @@
+use crate::token::{Token, TokenKind};
+use crate::statement::Stmt;
 
 #[derive(Debug, Clone)]
 pub enum LitVal { Int(i32), Double(f64), String(String), Bool(bool), Nil }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Literal  { value: LitVal },
     Grouping { expr: Box<Expr> },
@@ -28,155 +30,155 @@ impl Expr {
     }
 
     pub fn evaluate(&self) -> Result<LitVal, String> {
-	match &self {
-	    Expr::Literal { value } => Ok(value.clone()),
-	    Expr::Grouping { expr } => (*expr).evaluate(),
-	    Expr::Unary { operator, expr } => {
-		let right = expr.evaluate()?;
-		match (right, operator.kind()) {
-		    (LitVal::Int(x), TokenKind::Minus) => Ok(LitVal::Int(-x)),
-		    (LitVal::Double(x), TokenKind::Minus) => Ok(LitVal::Double(-x)),
-		    (any, TokenKind::Minus) => Err(format!("Minus operator not implemented for {:?}", any)),
-		    (any, TokenKind::Bang) => Ok(any.is_falsy()),
-		    _ => todo!()
-		}
-	    }
-	    Expr::Binary { operator, left, right } => {
-		use LitVal::*;
-		let left = left.evaluate()?;
-		let right = right.evaluate()?;
-		let op = operator.kind();
-		match op {
-		    TokenKind::Minus => {
-			match (left, right) {
-			    (Double(x), Double(y)) => Ok(Double(x - y)),
-			    (Int(x), Int(y)) => Ok(Int(x - y)),
-			    (Double(x), Int(y)) => Ok(Int(x as i32 - y)),
-			    (Int(x), Double(y)) => Ok(Int(x - y as i32)),
-			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical values.", op, l, r))
-			}
-		    }
-		    TokenKind::Plus => {
-			match (left, right) {
-			    (Double(x), Double(y)) => Ok(Double(x + y)),
-			    (Int(x), Int(y)) => Ok(Int(x + y)),
-			    (Double(x), Int(y)) => Ok(Int(x as i32 + y)),
-			    (Int(x), Double(y)) => Ok(Int(x + y as i32)),
-			    (String(x), String(y)) => Ok(String(format!("{}{}", x, y))),
-			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical or concatenable.", op, l, r))
-			}
-		    }
-		    TokenKind::Star => {
-			match (left, right) {
-			    (Double(x), Double(y)) => Ok(Double(x * y)),
-			    (Int(x), Int(y)) => Ok(Int(x * y)),
-			    (Double(x), Int(y)) => Ok(Double(x * f64::from(y))),
-			    (Int(x), Double(y)) => Ok(Double(f64::from(x) * y)),
-			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-			}
-		    }
-		    TokenKind::Slash => {
-			match (left, right) {
-			    (Double(x), Double(y)) => Ok(Double(x / y)),
-			    (Int(x), Int(y)) => Ok(Int(x / y)),
-			    (Double(x), Int(y)) => Ok(Double(x / f64::from(y))),
-			    (Int(x), Double(y)) => Ok(Double(f64::from(x) / y)),
-			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-			}
-		    }
-		    TokenKind::Greater => {
-			match (left, right) {
-			    (Double(x), Double(y)) => Ok(Bool(x > y)),
-			    (Int(x), Int(y)) => Ok(Bool(x > y)),
-			    (Double(x), Int(y)) => Ok(Bool(x > f64::from(y))),
-			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) > y)),
-			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-			}
-		    }
-		    TokenKind::Less => {
-			match (left, right) {
-			    (Double(x), Double(y)) => Ok(Bool(x < y)),
-			    (Int(x), Int(y)) => Ok(Bool(x < y)),
-			    (Double(x), Int(y)) => Ok(Bool(x < f64::from(y))),
-			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) < y)),
-			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-			}
-		    }
-		    TokenKind::GreaterEqual => {
-			match (left, right) {
-			    (Double(x), Double(y)) => Ok(Bool(x >= y)),
-			    (Int(x), Int(y)) => Ok(Bool(x >= y)),
-			    (Double(x), Int(y)) => Ok(Bool(x >= f64::from(y))),
-			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) >= y)),
-			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-			}
-		    }
-		    TokenKind::LessEqual => {
-			match (left, right) {
-			    (Double(x), Double(y)) => Ok(Bool(x <= y)),
-			    (Int(x), Int(y)) => Ok(Bool(x <= y)),
-			    (Double(x), Int(y)) => Ok(Bool(x <= f64::from(y))),
-			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) <= y)),
-			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-			}
-		    }
-		    TokenKind::EqualEqual => {
-			match (left, right) {
-			    (Bool(x), Bool(y)) => Ok(Bool(x == y)),
-			    (Double(x), Double(y)) => Ok(Bool(x == y)),
-			    (Int(x), Int(y)) => Ok(Bool(x == y)),
-			    (Double(x), Int(y)) => Ok(Bool(x == f64::from(y))),
-			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) == y)),
-			    (String(x), String(y)) => Ok(Bool(x == y)),
-			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical or boolean", op, l, r))
-			}
-		    }
-		    TokenKind::BangEqual => {
-			match (left, right) {
-			    (Bool(x), Bool(y)) => Ok(Bool(x != y)),
-			    (Double(x), Double(y)) => Ok(Bool(x != y)),
-			    (Int(x), Int(y)) => Ok(Bool(x != y)),
-			    (Double(x), Int(y)) => Ok(Bool(x != f64::from(y))),
-			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) != y)),
-			    (String(x), String(y)) => Ok(Bool(x != y)),
-			    (l, r) => Err(format!("Can't perform {:?} operation on non-numerical or non-boolean values {} and {}", op, l, r))
-			}
-		    }
-		    TokenKind::And => {
-			match (left, right) {
-			    (Bool(x), Bool(y)) => Ok(Bool(x && y)),
-			    (l, r) => Err(format!("Cannot perform {:?} operation on {} and {}. Operands must be boolean.", op, l, r))
-			}
-		    }
-		    TokenKind::Or => {
-			match (left, right) {
-			    (Bool(x), Bool(y )) => Ok(Bool(x || y)),
-			    (l, r) => Err(format!("Cannot perform {:?} operation on {} and {}. Operands msut be boolean.", op, l, r))
-			}
-		    }
-		    e => Err(format!("Unknown operator {:?}", e))
-		}
-	    }
-	}
+    	match &self {
+    	    Expr::Literal { value } => Ok(value.clone()),
+    	    Expr::Grouping { expr } => (*expr).evaluate(),
+    	    Expr::Unary { operator, expr } => {
+        		let right = expr.evaluate()?;
+        		match (right, operator.kind()) {
+        		    (LitVal::Int(x), TokenKind::Minus) => Ok(LitVal::Int(-x)),
+        		    (LitVal::Double(x), TokenKind::Minus) => Ok(LitVal::Double(-x)),
+        		    (any, TokenKind::Minus) => Err(format!("Minus operator not implemented for {:?}", any)),
+        		    (any, TokenKind::Bang) => Ok(any.is_falsy()),
+        		    _ => todo!()
+        		}
+    	    }
+    	    Expr::Binary { operator, left, right } => {
+        		use LitVal::*;
+        		let left = left.evaluate()?;
+        		let right = right.evaluate()?;
+        		let op = operator.kind();
+        		match op {
+        		    TokenKind::Minus => {
+            			match (left, right) {
+            			    (Double(x), Double(y)) => Ok(Double(x - y)),
+            			    (Int(x), Int(y)) => Ok(Int(x - y)),
+            			    (Double(x), Int(y)) => Ok(Int(x as i32 - y)),
+            			    (Int(x), Double(y)) => Ok(Int(x - y as i32)),
+            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical values.", op, l, r))
+            			}
+        		    }
+        		    TokenKind::Plus => {
+            			match (left, right) {
+            			    (Double(x), Double(y)) => Ok(Double(x + y)),
+            			    (Int(x), Int(y)) => Ok(Int(x + y)),
+            			    (Double(x), Int(y)) => Ok(Int(x as i32 + y)),
+            			    (Int(x), Double(y)) => Ok(Int(x + y as i32)),
+            			    (String(x), String(y)) => Ok(String(format!("{}{}", x, y))),
+            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical or concatenable.", op, l, r))
+            			}
+        		    }
+        		    TokenKind::Star => {
+            			match (left, right) {
+            			    (Double(x), Double(y)) => Ok(Double(x * y)),
+            			    (Int(x), Int(y)) => Ok(Int(x * y)),
+            			    (Double(x), Int(y)) => Ok(Double(x * f64::from(y))),
+            			    (Int(x), Double(y)) => Ok(Double(f64::from(x) * y)),
+            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
+            			}
+        		    }
+        		    TokenKind::Slash => {
+            			match (left, right) {
+            			    (Double(x), Double(y)) => Ok(Double(x / y)),
+            			    (Int(x), Int(y)) => Ok(Int(x / y)),
+            			    (Double(x), Int(y)) => Ok(Double(x / f64::from(y))),
+            			    (Int(x), Double(y)) => Ok(Double(f64::from(x) / y)),
+            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
+            			}
+        		    }
+        		    TokenKind::Greater => {
+            			match (left, right) {
+            			    (Double(x), Double(y)) => Ok(Bool(x > y)),
+            			    (Int(x), Int(y)) => Ok(Bool(x > y)),
+            			    (Double(x), Int(y)) => Ok(Bool(x > f64::from(y))),
+            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) > y)),
+            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
+            			}
+        		    }
+        		    TokenKind::Less => {
+            			match (left, right) {
+            			    (Double(x), Double(y)) => Ok(Bool(x < y)),
+            			    (Int(x), Int(y)) => Ok(Bool(x < y)),
+            			    (Double(x), Int(y)) => Ok(Bool(x < f64::from(y))),
+            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) < y)),
+            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
+            			}
+        		    }
+        		    TokenKind::GreaterEqual => {
+            			match (left, right) {
+            			    (Double(x), Double(y)) => Ok(Bool(x >= y)),
+            			    (Int(x), Int(y)) => Ok(Bool(x >= y)),
+            			    (Double(x), Int(y)) => Ok(Bool(x >= f64::from(y))),
+            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) >= y)),
+            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
+            			}
+        		    }
+        		    TokenKind::LessEqual => {
+            			match (left, right) {
+            			    (Double(x), Double(y)) => Ok(Bool(x <= y)),
+            			    (Int(x), Int(y)) => Ok(Bool(x <= y)),
+            			    (Double(x), Int(y)) => Ok(Bool(x <= f64::from(y))),
+            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) <= y)),
+            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
+            			}
+        		    }
+        		    TokenKind::EqualEqual => {
+            			match (left, right) {
+            			    (Bool(x), Bool(y)) => Ok(Bool(x == y)),
+            			    (Double(x), Double(y)) => Ok(Bool(x == y)),
+            			    (Int(x), Int(y)) => Ok(Bool(x == y)),
+            			    (Double(x), Int(y)) => Ok(Bool(x == f64::from(y))),
+            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) == y)),
+            			    (String(x), String(y)) => Ok(Bool(x == y)),
+            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical or boolean", op, l, r))
+            			}
+        		    }
+        		    TokenKind::BangEqual => {
+            			match (left, right) {
+            			    (Bool(x), Bool(y)) => Ok(Bool(x != y)),
+            			    (Double(x), Double(y)) => Ok(Bool(x != y)),
+             			    (Int(x), Int(y)) => Ok(Bool(x != y)),
+            			    (Double(x), Int(y)) => Ok(Bool(x != f64::from(y))),
+            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) != y)),
+            			    (String(x), String(y)) => Ok(Bool(x != y)),
+            			    (l, r) => Err(format!("Can't perform {:?} operation on non-numerical or non-boolean values {} and {}", op, l, r))
+            			}
+        		    }
+        		    TokenKind::And => {
+            			match (left, right) {
+            			    (Bool(x), Bool(y)) => Ok(Bool(x && y)),
+            			    (l, r) => Err(format!("Cannot perform {:?} operation on {} and {}. Operands must be boolean.", op, l, r))
+            			}
+        		    }
+        		    TokenKind::Or => {
+            			match (left, right) {
+            			    (Bool(x), Bool(y )) => Ok(Bool(x || y)),
+            			    (l, r) => Err(format!("Cannot perform {:?} operation on {} and {}. Operands msut be boolean.", op, l, r))
+            			}
+        		    }
+        		    e => Err(format!("Unknown operator {:?}", e))
+        		}
+    	    }
+    	}
     }
 
 }
 
 impl LitVal {
     fn is_falsy(&self) -> LitVal {
-	match self {
-	    LitVal::Int(x) => LitVal::Bool(*x == 0 as i32),
-	    LitVal::Double(x) => LitVal::Bool(*x == 0.0 as f64),
-	    LitVal::String(x) => LitVal::Bool(x.is_empty()),
-	    LitVal::Bool(x) => LitVal::Bool(!x),
-	    LitVal::Nil => LitVal::Bool(true),
-	}
+    	match self {
+    	    LitVal::Int(x) => LitVal::Bool(*x == 0 as i32),
+    	    LitVal::Double(x) => LitVal::Bool(*x == 0.0 as f64),
+    	    LitVal::String(x) => LitVal::Bool(x.is_empty()),
+    	    LitVal::Bool(x) => LitVal::Bool(!x),
+    	    LitVal::Nil => LitVal::Bool(true),
+    	}
     }
 }
 
 impl std::fmt::Display for LitVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-	match self {
+    	match self {
             LitVal::Int(v)    => write!(f, "Int({})", v),
             LitVal::Double(v) => write!(f, "Double({})", v),
             LitVal::String(v) => write!(f, "String(\"{}\")", v),
@@ -190,7 +192,7 @@ impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Literal { value } => {
-		write!(f, "{}", value)
+        		write!(f, "{}", value)
             }
             Self::Grouping { expr } => {
                 write!(f, "{}", expr)
@@ -223,14 +225,6 @@ impl std::fmt::Display for Expr {
     }
 }
 
-impl Expr {
-    pub fn print(&self) {
-        println!("{}", self);
-    }
-}
-
-
-use crate::token::{Token, TokenKind};
 pub struct Parser {
     tokens: Vec<Token>,
     current: i32,
@@ -244,11 +238,54 @@ impl Parser {
         }
     }
     
-    pub fn parse(&mut self, tokens: Vec<Token>) -> Result<Expr, String> {
-	self.tokens = tokens;
-        self.expression()
+    pub fn parse(&mut self, tokens: Vec<Token>) -> Result<Vec<Stmt>, String> {
+	    self.tokens = tokens;
+
+	    let mut stmts: Vec<Stmt> = Vec::new();
+	    let mut errs: Vec<String> = Vec::new();
+
+	    while !self.is_at_end() {
+	        let stmt = self.statement();
+	        match stmt {
+    	    	Ok(s) => stmts.push(s),
+    	    	Err(msg) => {
+    	    	    errs.push(msg);
+    	    	    self.synchronize();
+	            }
+	        }
+	    }
+
+	    if errs.is_empty() {
+	        return Ok(stmts)
+	    }
+        Err(errs.join("\n"))
     }
 
+    fn statement(&mut self) -> Result<Stmt, String> {
+        let tok = self.peek();
+	    match tok.kind() {
+	        TokenKind::Print => self.print_statement(),
+	        _ => self.expression_statement(),
+	    }
+    }
+
+    fn print_statement(&mut self) -> Result<Stmt, String> {
+        self.advance();
+        let expr = self.expression()?;
+        self.consume(TokenKind::Semicolon, format!("{} Expected a semicolon ';' after expression denoting end of statement.", self.peek().loc()))?;
+        Ok(Stmt::Print {
+            expression: expr
+        })
+    }
+
+    fn expression_statement(&mut self) -> Result<Stmt, String> {
+        let expr = self.expression()?;
+        self.consume(TokenKind::Semicolon, format!("{} Expected a semicolon ';' after expression denoting end of statement.", self.peek().loc()))?;
+        Ok(Stmt::Expression {
+            expression: expr
+        })
+    }
+    
     // helpers --------------------------------------
     fn is_at_end(&self) -> bool {
         self.current as usize >= self.tokens.len() || matches!(self.peek().kind(), TokenKind::Eof) 
@@ -260,7 +297,7 @@ impl Parser {
 
     fn previous(&self) -> Result<&Token, String> {
         if self.is_at_end() || (self.current - 1) as usize >= self.tokens.len() {
-            Err(format!("Couldn't read previous token of {:?}!", self.peek()))
+            Err(format!("{} Couldn't read previous token of {:?}!", self.peek().loc(), self.peek().kind()))
         } else {
             Ok(self.tokens.get((self.current - 1) as usize).unwrap())
         }
@@ -284,6 +321,7 @@ impl Parser {
     //Error handling
     fn synchronize(&mut self) {
         use TokenKind::*;
+        self.advance();
         while !self.is_at_end() {
             if matches!(self.previous().unwrap().kind(), Semicolon) || matches!(self.peek().kind(), Fun | Class | Var | For | If | While | Print | Return) {
                 return;
@@ -388,15 +426,15 @@ impl Parser {
             TokenKind::LeftParen => {
                 self.advance();
                 let expr = self.expression()?;
-                self.consume(TokenKind::RightParen, "Expected ')' after expression".to_string())?;
+                self.consume(TokenKind::RightParen, format!("{} Expected ')' after expression, but found {:?}!", self.peek().loc(), self.peek().kind()))?;
                 Ok(Expr::new_grouping(expr))
             }
-            TokenKind::Eof => {
-                println!("\nBye, bye :(");
-                std::process::exit(0);
-            }
+            // TokenKind::Eof => {
+            //     println!("\nBye, bye :(");
+            //     std::process::exit(0);
+            // }
             _ => Err(
-                format!("[ERROR]: {} Expected Expression after {:?} operator, but found {:?}!", 
+                format!("{} Expected Expression after {:?} operator, but found {:?}!", 
                 self.peek().loc(), self.previous()?.kind(), self.peek().kind())
             )
         }

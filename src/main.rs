@@ -1,16 +1,61 @@
 // mod command_line;
 // use command_line::CommandLineArgs;
-use std::io::{Error, Write};
 mod lexer;
-use crate::lexer::Lexer;
 mod token;
 mod location;
 mod parser;
-use parser::Parser;
 mod interpreter;
+mod statement;
+
+use std::{fs, io::{Error, Write}};
+use parser::Parser;
+use lexer::Lexer;
 use interpreter::Interpreter;
 
+fn run(interpreter: &mut Interpreter, filepath: String, source: String) -> Result<(), String> {
+    let mut lexer = Lexer::new();
+    let mut parser = Parser::new();
+
+    let tokens = lexer.lex(filepath, source);
+    let stmts = parser.parse(tokens)?;
+    interpreter.interpret(stmts)?;
+
+    Ok(())
+}
+
 fn main() -> Result<(), Error> {
+    let cl_args = std::env::args();
+    let mut interpreter = Interpreter::new();
+
+    match &cl_args.len() {
+        3.. => {}
+        2 => {
+            let filepath = cl_args.last().unwrap();
+	        let source: String = fs::read_to_string(&filepath).unwrap();
+            run(&mut interpreter, filepath, source)
+                .unwrap_or_else(|msg| {
+                    println!("[ERROR][parser] {}", msg);
+                });
+
+        }
+        _ => {
+            loop {
+                let mut input = String::new(); 
+                print!("> ");
+                let _ = std::io::stdout().flush();
+                std::io::stdin().read_line(&mut input).unwrap();
+
+                run(&mut interpreter, "STDIN".to_string(), input)
+                    .unwrap_or_else(|msg| {
+                        println!("[ERROR][parser] {}", msg);
+                    });
+            }
+        }
+    }
+
+    Ok(())
+}
+
     // let mut args = CommandLineArgs::new();
     // for cl_arg in cl_args {
     //     if cl_arg.ends_with(".lox") {
@@ -18,51 +63,4 @@ fn main() -> Result<(), Error> {
     //     }
     // }
     // let file = args.source_files.first().expect("[ERROR]: Please provide a source file!").to_string();
-
-    let cl_args = std::env::args();
-    match &cl_args.len() {
-        3.. => {}
-        2 => {
-            let file = cl_args.last().unwrap();
-            let mut lexer = Lexer::new();
-            let mut parser = Parser::new();
-            let tokens = lexer.lex_file(file);
-	    let expr = parser.parse(tokens);
-	    match expr {
-                Ok(e) => {
-		    e.print();
-		    println!("[INFO][parser] {:?}", e.evaluate());
-		}
-                Err(m) => println!("[ERROR][parser] {}", m)
-            }
-
-       }
-        _ => {
-            let mut lexer = Lexer::new();
-            let mut parser = Parser::new();
-	    let mut interpreter = Interpreter::new();
-            loop {
-                let mut input = String::new(); 
-                print!("> ");
-                let _ = std::io::stdout().flush();
-                std::io::stdin().read_line(&mut input).unwrap();
-
-                let tokens = lexer.lex_stdin(input);
-                match parser.parse(tokens) {
-                    Ok(e) => {
-			println!("[INFO][parser][echo] {}", e);
-			match interpreter.interpret(e) {
-			    Ok(x) => println!("[INFO][interpreter] {}", x),
-			    Err(x) => println!("[ERROR][interpreter] {}", x),
-			}
-		    },
-                    Err(m) => println!("[ERROR][parser] {}", m)
-                }
-            }
-        }
-    }
-
-
-    Ok(())
-}
 
