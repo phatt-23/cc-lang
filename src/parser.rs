@@ -1,229 +1,6 @@
 use crate::token::{Token, TokenKind};
 use crate::statement::Stmt;
-
-#[derive(Debug, Clone)]
-pub enum LitVal { Int(i32), Double(f64), String(String), Bool(bool), Nil }
-
-#[derive(Debug, Clone)]
-pub enum Expr {
-    Literal  { value: LitVal },
-    Grouping { expr: Box<Expr> },
-    Unary    { operator: Token, expr: Box<Expr> },
-    Binary   { operator: Token, left: Box<Expr>, right: Box<Expr> }
-}
-
-impl Expr {
-    pub fn new_binary(left: Expr , operator: Token, right: Expr) -> Self {
-        Self::Binary { operator, left: Box::from(left), right: Box::from(right) }
-    }
-
-    pub fn new_unary(operator: Token, expr: Expr) -> Self {
-        Self::Unary { operator, expr: Box::from(expr) }
-    }
-
-    pub fn new_grouping(expr: Expr) -> Self {
-        Self::Grouping { expr: Box::from(expr) }
-    }
-
-    pub fn new_literal(value: LitVal) -> Self {
-        Self::Literal { value }
-    }
-
-    pub fn evaluate(&self) -> Result<LitVal, String> {
-    	match &self {
-    	    Expr::Literal { value } => Ok(value.clone()),
-    	    Expr::Grouping { expr } => (*expr).evaluate(),
-    	    Expr::Unary { operator, expr } => {
-        		let right = expr.evaluate()?;
-        		match (right, operator.kind()) {
-        		    (LitVal::Int(x), TokenKind::Minus) => Ok(LitVal::Int(-x)),
-        		    (LitVal::Double(x), TokenKind::Minus) => Ok(LitVal::Double(-x)),
-        		    (any, TokenKind::Minus) => Err(format!("Minus operator not implemented for {:?}", any)),
-        		    (any, TokenKind::Bang) => Ok(any.is_falsy()),
-        		    _ => todo!()
-        		}
-    	    }
-    	    Expr::Binary { operator, left, right } => {
-        		use LitVal::*;
-        		let left = left.evaluate()?;
-        		let right = right.evaluate()?;
-        		let op = operator.kind();
-        		match op {
-        		    TokenKind::Minus => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Double(x - y)),
-            			    (Int(x), Int(y)) => Ok(Int(x - y)),
-            			    (Double(x), Int(y)) => Ok(Int(x as i32 - y)),
-            			    (Int(x), Double(y)) => Ok(Int(x - y as i32)),
-            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical values.", op, l, r))
-            			}
-        		    }
-        		    TokenKind::Plus => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Double(x + y)),
-            			    (Int(x), Int(y)) => Ok(Int(x + y)),
-            			    (Double(x), Int(y)) => Ok(Int(x as i32 + y)),
-            			    (Int(x), Double(y)) => Ok(Int(x + y as i32)),
-            			    (String(x), String(y)) => Ok(String(format!("{}{}", x, y))),
-            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical or concatenable.", op, l, r))
-            			}
-        		    }
-        		    TokenKind::Star => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Double(x * y)),
-            			    (Int(x), Int(y)) => Ok(Int(x * y)),
-            			    (Double(x), Int(y)) => Ok(Double(x * f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Double(f64::from(x) * y)),
-            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-            			}
-        		    }
-        		    TokenKind::Slash => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Double(x / y)),
-            			    (Int(x), Int(y)) => Ok(Int(x / y)),
-            			    (Double(x), Int(y)) => Ok(Double(x / f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Double(f64::from(x) / y)),
-            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-            			}
-        		    }
-        		    TokenKind::Greater => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Bool(x > y)),
-            			    (Int(x), Int(y)) => Ok(Bool(x > y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x > f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) > y)),
-            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-            			}
-        		    }
-        		    TokenKind::Less => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Bool(x < y)),
-            			    (Int(x), Int(y)) => Ok(Bool(x < y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x < f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) < y)),
-            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-            			}
-        		    }
-        		    TokenKind::GreaterEqual => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Bool(x >= y)),
-            			    (Int(x), Int(y)) => Ok(Bool(x >= y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x >= f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) >= y)),
-            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-            			}
-        		    }
-        		    TokenKind::LessEqual => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Bool(x <= y)),
-            			    (Int(x), Int(y)) => Ok(Bool(x <= y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x <= f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) <= y)),
-            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", op, l, r))
-            			}
-        		    }
-        		    TokenKind::EqualEqual => {
-            			match (left, right) {
-            			    (Bool(x), Bool(y)) => Ok(Bool(x == y)),
-            			    (Double(x), Double(y)) => Ok(Bool(x == y)),
-            			    (Int(x), Int(y)) => Ok(Bool(x == y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x == f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) == y)),
-            			    (String(x), String(y)) => Ok(Bool(x == y)),
-            			    (l, r) => Err(format!("Can't perform {:?} operation on {} and {}. Operands must be numerical or boolean", op, l, r))
-            			}
-        		    }
-        		    TokenKind::BangEqual => {
-            			match (left, right) {
-            			    (Bool(x), Bool(y)) => Ok(Bool(x != y)),
-            			    (Double(x), Double(y)) => Ok(Bool(x != y)),
-             			    (Int(x), Int(y)) => Ok(Bool(x != y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x != f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) != y)),
-            			    (String(x), String(y)) => Ok(Bool(x != y)),
-            			    (l, r) => Err(format!("Can't perform {:?} operation on non-numerical or non-boolean values {} and {}", op, l, r))
-            			}
-        		    }
-        		    TokenKind::And => {
-            			match (left, right) {
-            			    (Bool(x), Bool(y)) => Ok(Bool(x && y)),
-            			    (l, r) => Err(format!("Cannot perform {:?} operation on {} and {}. Operands must be boolean.", op, l, r))
-            			}
-        		    }
-        		    TokenKind::Or => {
-            			match (left, right) {
-            			    (Bool(x), Bool(y )) => Ok(Bool(x || y)),
-            			    (l, r) => Err(format!("Cannot perform {:?} operation on {} and {}. Operands msut be boolean.", op, l, r))
-            			}
-        		    }
-        		    e => Err(format!("Unknown operator {:?}", e))
-        		}
-    	    }
-    	}
-    }
-
-}
-
-impl LitVal {
-    fn is_falsy(&self) -> LitVal {
-    	match self {
-    	    LitVal::Int(x) => LitVal::Bool(*x == 0 as i32),
-    	    LitVal::Double(x) => LitVal::Bool(*x == 0.0 as f64),
-    	    LitVal::String(x) => LitVal::Bool(x.is_empty()),
-    	    LitVal::Bool(x) => LitVal::Bool(!x),
-    	    LitVal::Nil => LitVal::Bool(true),
-    	}
-    }
-}
-
-impl std::fmt::Display for LitVal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    	match self {
-            LitVal::Int(v)    => write!(f, "Int({})", v),
-            LitVal::Double(v) => write!(f, "Double({})", v),
-            LitVal::String(v) => write!(f, "String(\"{}\")", v),
-            LitVal::Bool(v)   => write!(f, "Bool({})", if *v {"true"} else {"false"}),
-            LitVal::Nil       => write!(f, "nil"),
-        }
-    }
-}
-
-impl std::fmt::Display for Expr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Literal { value } => {
-        		write!(f, "{}", value)
-            }
-            Self::Grouping { expr } => {
-                write!(f, "{}", expr)
-            }
-            Self::Unary { operator, expr } => {
-                match operator.kind() {
-                    TokenKind::Minus => write!(f, "(- {})", expr),
-                    TokenKind::Bang  => write!(f, "(! {})", expr),
-                    err => todo!("Unary operator {:?} not supported", err),
-                }
-            }
-            Self::Binary { operator, left, right } => {
-                match operator.kind() {
-                    TokenKind::Plus         => write!(f, "(+ {} {})", left, right),
-                    TokenKind::Minus        => write!(f, "(- {} {})", left, right),
-                    TokenKind::Star         => write!(f, "(* {} {})", left, right),
-                    TokenKind::Slash        => write!(f, "(/ {} {})", left, right),
-                    TokenKind::EqualEqual   => write!(f, "(== {} {})", left, right),
-                    TokenKind::BangEqual    => write!(f, "(!= {} {})", left, right),
-                    TokenKind::Less         => write!(f, "(< {} {})", left, right),
-                    TokenKind::LessEqual    => write!(f, "(<= {} {})", left, right),
-                    TokenKind::Greater      => write!(f, "(> {} {})", left, right),
-                    TokenKind::GreaterEqual => write!(f, "(>= {} {})", left, right),
-                    TokenKind::And          => write!(f, "(and {} {})", left, right),
-                    TokenKind::Or           => write!(f, "(or {} {})", left, right),
-                    err => todo!("Binary operator {:?} not supported", err),
-                }
-            }
-        }
-    }
-}
+use crate::expression::{Expr, LitVal};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -245,7 +22,7 @@ impl Parser {
 	    let mut errs: Vec<String> = Vec::new();
 
 	    while !self.is_at_end() {
-	        let stmt = self.statement();
+	        let stmt = self.declaration();
 	        match stmt {
     	    	Ok(s) => stmts.push(s),
     	    	Err(msg) => {
@@ -261,6 +38,43 @@ impl Parser {
         Err(errs.join("\n"))
     }
 
+    fn declaration(&mut self) -> Result<Stmt, String> {
+        let tok = self.peek();
+        if matches!(tok.kind(), TokenKind::Var) {
+            let var_decl = self.var_declaration();
+            match var_decl {
+                Ok(stmt) => return Ok(stmt),
+                Err(msg) => {
+                    self.synchronize();
+                    return Err(msg);
+                }
+            }
+        }
+        self.statement()
+    }
+    
+    fn var_declaration(&mut self) -> Result<Stmt, String> {
+        self.advance();
+        let ident = self.advance().clone();
+        match ident.kind() {
+            TokenKind::Identifier(_name) => {
+                let expression = if matches!(self.peek().kind(), TokenKind::Equal) {
+                                    self.advance();
+                                    self.expression()?
+                                } else {
+                                    Expr::Literal { value: LitVal::Nil }
+                                };
+
+                self.consume(
+                    TokenKind::Semicolon, 
+                    format!("{} Expected semicolon ';' denoting end of variable declaration. Found {:?}.", &self.peek().loc(), self.peek().kind())
+                )?;
+                Ok(Stmt::Var { ident, expression })
+            }
+            any => Err(format!("{} Expected Identifier after `var` keyword, but found {:?}.", self.peek().loc(), any))
+        }
+    }
+    
     fn statement(&mut self) -> Result<Stmt, String> {
         let tok = self.peek();
 	    match tok.kind() {
@@ -429,14 +243,23 @@ impl Parser {
                 self.consume(TokenKind::RightParen, format!("{} Expected ')' after expression, but found {:?}!", self.peek().loc(), self.peek().kind()))?;
                 Ok(Expr::new_grouping(expr))
             }
-            // TokenKind::Eof => {
-            //     println!("\nBye, bye :(");
-            //     std::process::exit(0);
-            // }
-            _ => Err(
-                format!("{} Expected Expression after {:?} operator, but found {:?}!", 
-                self.peek().loc(), self.previous()?.kind(), self.peek().kind())
-            )
+            TokenKind::Var => {
+                Ok(Expr::Var { ident: self.advance().clone() })
+            }
+            TokenKind::Identifier(_i) => {
+                Ok(Expr::Var { ident: self.advance().clone() })
+            }
+            _ => {
+                if matches!(self.peek().kind(), TokenKind::Eof) {
+                    return Err(format!("{} Expected expression but found nothing (EOF).", self.peek().loc()));
+                }
+
+                match self.previous() {
+                    Ok(p) => Err(format!("{} Expected Expression after {:?}, but found {:?}!", 
+                        self.peek().loc(), p.kind(), self.peek().kind())),
+                    Err(m) => Err(format!("{} Unexpected usage of {:?}, [dbg-msg] {}", self.peek().loc(), self.peek().kind(), m))
+                }
+            }
         }
     }
 }

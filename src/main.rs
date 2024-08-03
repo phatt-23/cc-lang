@@ -6,6 +6,8 @@ mod location;
 mod parser;
 mod interpreter;
 mod statement;
+mod expression;
+mod enviroment;
 
 use std::{fs, io::{Error, Write}};
 use parser::Parser;
@@ -36,7 +38,6 @@ fn main() -> Result<(), Error> {
                 .unwrap_or_else(|msg| {
                     println!("[ERROR][parser] {}", msg);
                 });
-
         }
         _ => {
             loop {
