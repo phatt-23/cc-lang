@@ -132,7 +132,7 @@ impl Parser {
             Err(msg)
         }
     }
-    //Error handling
+
     fn synchronize(&mut self) {
         use TokenKind::*;
         self.advance();
@@ -146,9 +146,24 @@ impl Parser {
 
     //AST Syntax ------------------------------------
     fn expression(&mut self) -> Result<Expr, String> {
-        self.equality()
+        self.assignment()
     }
 
+    fn assignment(&mut self) -> Result<Expr, String> {
+        let expr = self.equality()?;
+
+        if matches!(self.peek().kind(), TokenKind::Equal) {
+            self.advance();
+            let value = self.assignment()?;
+            if let Expr::Var {ident} = expr {
+                return Ok(Expr::new_assign(ident, value))
+            }
+            return Err(format!("{} Invalid assignment target {}.", self.previous()?.loc(), expr))
+        }
+
+        Ok(expr)
+    }
+    
     fn equality(&mut self) -> Result<Expr, String> {
         let mut expr = self.comparison()?;
         use TokenKind::*;

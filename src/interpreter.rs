@@ -15,16 +15,16 @@ impl Interpreter {
         for stmt in stmts {
             match stmt {
                 Stmt::Expression { expression } => {
-                    expression.evaluate(&self.enviroment)?;
+                    expression.evaluate(&mut self.enviroment)?;
                 }
                 Stmt::Print { expression } => {
-                    let value = expression.evaluate(&self.enviroment)?;
+                    let value = expression.evaluate(&mut self.enviroment)?;
                     println!("{}", value);
                 }
                 Stmt::Var { ident, expression } => {
                     match ident.kind() {
                         TokenKind::Identifier(i) => {
-                            let value = expression.evaluate(&self.enviroment)?;
+                            let value = expression.evaluate(&mut self.enviroment)?;
                             self.enviroment.define(i.clone(), value);
                             return Ok(())
                         }

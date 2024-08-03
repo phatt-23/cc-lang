@@ -10,6 +10,7 @@ pub enum Expr {
     Unary    { operator: Token, expr: Box<Expr> },
     Binary   { operator: Token, left: Box<Expr>, right: Box<Expr> },
     Var      { ident: Token },
+    Assign   { target: Token, value: Box<Expr> },
 }
 
 impl Expr {
@@ -29,7 +30,11 @@ impl Expr {
         Self::Literal { value }
     }
 
-    pub fn evaluate(&self, env: &Enviroment) -> Result<LitVal, String> {
+    pub fn new_assign(target: Token, value: Expr) -> Self {
+        Self::Assign { target, value: Box::from(value) }
+    }
+    
+    pub fn evaluate(&self, env: &mut Enviroment) -> Result<LitVal, String> {
     	match self {
     	    Expr::Literal { value } => Ok(value.clone()),
     	    Expr::Grouping { expr } => (*expr).evaluate(env),
@@ -43,6 +48,16 @@ impl Expr {
         		    _ => todo!()
         		}
     	    }
+            Expr::Assign { target, value } => {
+                if let TokenKind::Identifier(i) = target.kind() {
+                    let v = value.evaluate(env)?;
+                    return match env.assign(i.to_string(), v.clone()) {
+                        Some(_) => Ok(v),
+                        None => Err(format!("{} Can't assign {} to an undeclared target {}.", target.loc(), v, i))
+                    }
+                }
+                Err(format!(""))
+            }
             Expr::Var { ident } => {
 				if let TokenKind::Identifier(i) = ident.kind() {
 					match env.get(i.clone()) {
@@ -188,10 +203,10 @@ impl LitVal {
 impl std::fmt::Display for LitVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     	match self {
-            LitVal::Int(v)    => write!(f, "Int({})", v),
-            LitVal::Double(v) => write!(f, "Double({})", v),
-            LitVal::String(v) => write!(f, "String(\"{}\")", v),
-            LitVal::Bool(v)   => write!(f, "Bool({})", if *v {"true"} else {"false"}),
+            LitVal::Int(v)    => write!(f, "int({})", v),
+            LitVal::Double(v) => write!(f, "double({})", v),
+            LitVal::String(v) => write!(f, "string(\"{}\")", v),
+            LitVal::Bool(v)   => write!(f, "bool({})", if *v {"true"} else {"false"}),
             LitVal::Nil       => write!(f, "nil"),
         }
     }
@@ -214,6 +229,9 @@ impl std::fmt::Display for Expr {
                 }
             }
             Self::Var { ident: _ } => {
+                Ok(())
+            }
+            Self::Assign { target: _, value: _ } => {
                 Ok(())
             }
             Self::Binary { operator, left, right } => {

@@ -21,4 +21,12 @@ impl Enviroment {
     pub fn get(&self, name: String) -> Option<&LitVal> {
         self.values.get(&name)
     }
+
+    pub fn assign(&mut self, name: String, value: LitVal) -> Option<LitVal> {
+        if self.values.contains_key(&name) {
+            self.values.insert(name, value)
+        } else {
+            None
+        }
+    }
 }
