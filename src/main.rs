@@ -6,6 +6,7 @@ mod interpreter;
 mod statement;
 mod expression;
 mod enviroment;
+mod loc_error;
 
 use std::{fs, io::{Error, Write}};
 use parser::Parser;
@@ -21,7 +22,7 @@ fn main() -> Result<(), Error> {
         2 => {
             let filepath = cl_args.last().unwrap();
 	        let source: String = fs::read_to_string(&filepath).unwrap();
-            run(&mut interpreter, filepath, source).unwrap_or_else(|msg| { println!("[ERROR][interpreter] {}", msg); });
+            run(&mut interpreter, filepath, source);
         }
         _ => {
             loop {
@@ -29,7 +30,7 @@ fn main() -> Result<(), Error> {
                 print!(">>> ");
                 let _ = std::io::stdout().flush();
                 std::io::stdin().read_line(&mut input).unwrap();
-                run(&mut interpreter, "STDIN".to_string(), input).unwrap_or_else(|msg| { println!("[ERROR][interpreter] {}", msg); });
+                run(&mut interpreter, "STDIN".to_string(), input);
             }
         }
     }
@@ -37,13 +38,11 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn run(interpreter: &mut Interpreter, filepath: String, source: String) -> Result<(), String> {
+fn run(interpreter: &mut Interpreter, filepath: String, source: String) {
     let mut lexer = Lexer::new();
     let mut parser = Parser::new();
 
     let tokens = lexer.lex(filepath, source);
-    let stmts = parser.parse(tokens)?;
-    interpreter.interpret(stmts)?;
-
-    Ok(())
+    let stmts = parser.parse(tokens);
+    interpreter.interpret(stmts);
 }

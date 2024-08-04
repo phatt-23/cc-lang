@@ -1,9 +1,111 @@
-!false;
+// sample source file
 
-2 * (1 + 3) * 5 * 123;
+print "hello" + " " + "world"; // This a comment
+var a = 12;
+print "-----------------------------------";
+print a;
 
-print "hello" + " " + "world";
+var a = 5; // Another comment
+var b = 12;
 
-//+ 2;
+print a; // This is a comment
+print b;
+print a + b;
+print a *b;
 
-//1 +;
+{
+    var l = 90;
+    print l;
+}
+
+var a = "global a";
+var b = "global b";
+var c = "global c";
+{
+    var a = "outer a";
+    var b = "outer b";
+    {
+        var a = "inner a";
+        print a;
+        print b;
+        print c;
+        var d = "inner d";
+        print d;
+    }
+    print a;
+    print b;
+    print c;
+    print d;
+}
+print a;
+print b;
+print c;
+print d;
+
+{
+    print "----------------------------------";
+    var a = 2;
+    var b = 0;
+
+    if (a and b) {
+        print "inside THEN branch";
+    } else {
+        print "inside ELSE branch";
+    }
+
+    var c = 4;
+    if (c == 0) {
+        print "1";
+    } else if (c == 1) {
+        print "2";
+    } else if (c == 2) {
+        print "3";
+    } else {
+        print "4";
+        if (c == 3) {
+            print "5";
+        } else if (c == 4) {
+            print "6";
+        }
+    }
+}
+
+{
+    print "-- WHILE LOOP -- ITER in the scope --";
+    var c = 0;
+    while (c < 10) {
+        print c;
+        c = c + 1;
+    }
+}
+
+
+{
+    print "-- WHILE LOOP -- ITER in outer scopes --";
+    var b = 10;
+    {
+        {
+            while (b > 0) {
+                print b;
+                b = b - 1;
+            }
+        }
+    }
+}
+
+{
+    print "-- ASSIGN FROM NESTED --";
+    var h = 100;
+    print "before doing anything:";
+    print h;
+    {
+        print h; 
+        {
+            h = 120;
+            print "modified the value";
+            print h;
+        }
+        print h;
+    }
+    print h;
+}

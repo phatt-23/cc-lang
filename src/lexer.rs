@@ -3,7 +3,6 @@ use crate::location::Location;
 
 pub struct Lexer {
     source: String,
-    tokens: Vec<Token>,
     file: String,
     line: usize,
     col: usize,
@@ -14,7 +13,6 @@ pub struct Lexer {
 impl Lexer {
     pub fn new() -> Self {
         Lexer {
-            tokens: Vec::new(),
             source: String::new(),
             file: String::new(),
             line: 0,
@@ -27,19 +25,24 @@ impl Lexer {
     pub fn lex(&mut self, filepath: String, source: String) -> Vec<Token> {
         self.file = filepath;
         self.source = source;
+        let mut tokens: Vec<Token> = Vec::new();
         while !self.is_at_end() {
-            self.lex_token();
+            if let Some(tok) = self.lex_token() {
+                tokens.push(tok);
+            }
         }
-        // println!("[INFO][lexer]");
-        // for t in &self.tokens {
-        //     println!("  {}", t);
-        // }
+
+        tokens.push(Token::create(TokenKind::Eof, self.create_loc()));
+        
         for e in &self.err_reports {
             println!("[ERROR][lexer] {} {}", e.0, e.1);
         }
+
+        // for t in &tokens {
+        //     println!("[INFO][lexer] {}", t);
+        // }
         
-        self.add_token(TokenKind::Eof);
-        self.tokens.clone()
+        tokens
     }
 
     //Helpers ----------------------------------------------------
@@ -47,14 +50,14 @@ impl Lexer {
         self.err_reports.push((loc, message));
     }
 
+    fn create_loc(&self) -> Location {
+        Location::create(self.file.clone(), self.line, self.col)
+    }
+    
     fn advance(&mut self) -> char {
         self.current += 1;
         self.col += 1;
-        self.source.chars().nth(self.current - 1).unwrap_or_else(|| {
-            let loc = Location::create(self.file.clone(), self.line - 1, self.col);
-            self.report_err(loc, "Function advance() failed to read character.".to_string());
-            '\0'
-        })
+        self.source.chars().nth(self.current - 1).unwrap_or('\0')
     }
 
     fn is_at_end(&self) -> bool {
@@ -84,14 +87,8 @@ impl Lexer {
         true
     }
 
-    fn add_token(&mut self, tok_kind: TokenKind) {
-        let loc = Location::create(self.file.clone(), self.line, self.col);
-        let tok = Token::create(tok_kind, loc);
-        self.tokens.push(tok);
-    }
-
     //Literals ------------------------------------------------------
-    fn handle_string(&mut self) {
+    fn handle_string(&mut self) -> Token {
         let start = self.current;
         while self.peek() != '"' && !self.is_at_end() {
             if self.peek() == '\n' {
@@ -101,15 +98,16 @@ impl Lexer {
         }
 
         if self.is_at_end() {
-            self.report_err(Location::create(self.file.clone(), self.line, self.col), "Unterminated string".to_string())
+            self.report_err(self.create_loc(), "Unterminated string".to_string())
         }
 
         let str = self.source.get(start..self.current).unwrap().to_string();
         self.advance();
-        self.add_token(TokenKind::String(str));
+
+        Token::create(TokenKind::String(str), self.create_loc())
     }
 
-    fn handle_number(&mut self) {
+    fn handle_number(&mut self) -> Token {
         let start = self.current - 1;
         let mut is_real = false;
         while self.peek().is_ascii_digit() && !self.is_at_end() {
@@ -124,25 +122,25 @@ impl Lexer {
             }
         }
 
-        let loc = Location::create(self.file.clone(), self.line, self.col);
+        let loc = self.create_loc();
         let sub_str = self.source.get(start..self.current).unwrap().to_string();
 
         if is_real {
             let number = sub_str.parse::<f64>().unwrap_or_else(|_| {
-                self.report_err(loc, format!("Number failed to parse ({})", sub_str));
+                self.report_err(loc.clone(), format!("Number failed to parse ({})", sub_str));
                 0.0_f64
             });
-            self.add_token(TokenKind::Double(number));
+            Token::create(TokenKind::Double(number), loc)
         } else {
             let number = sub_str.parse::<i32>().unwrap_or_else(|_| {
-                self.report_err(loc, format!("Number failed to parse ({})", sub_str));
+                self.report_err(loc.clone(), format!("Number failed to parse ({})", sub_str));
                 0_i32
             });
-            self.add_token(TokenKind::Int(number));
+            Token::create(TokenKind::Int(number), loc)
         }
     }
 
-    fn handle_indentifier(&mut self) {
+    fn handle_indentifier(&mut self) -> Token {
         let start = self.current - 1;
         while self.peek().is_ascii_alphanumeric() || self.peek() == '_' {
             self.advance();
@@ -167,41 +165,41 @@ impl Lexer {
             "var"    => TokenKind::Var,
             _        => TokenKind::Identifier(sub_str.to_string()),
         };
-        self.add_token(kind);
+        Token::create(kind, self.create_loc())
     }
 
 
-    fn lex_token(&mut self) {
-        let loc = Location::create(self.file.clone(), self.line, self.col);
+    fn lex_token(&mut self) -> Option<Token> {
+        let loc = self.create_loc();
         let c: char = self.advance();
         match c {
         //Single character
-            '(' => self.add_token(TokenKind::LeftParen),
-            ')' => self.add_token(TokenKind::RightParen),
-            '{' => self.add_token(TokenKind::LeftBrace),
-            '}' => self.add_token(TokenKind::RightBrace),
-            ',' => self.add_token(TokenKind::Comma),
-            '.' => self.add_token(TokenKind::Dot),
-            ';' => self.add_token(TokenKind::Semicolon),
-            '+' => self.add_token(TokenKind::Plus),
-            '-' => self.add_token(TokenKind::Minus),
-            '*' => self.add_token(TokenKind::Star),
+            '(' => Some(Token::create(TokenKind::LeftParen, loc)),
+            ')' => Some(Token::create(TokenKind::RightParen, loc)),
+            '{' => Some(Token::create(TokenKind::LeftBrace, loc)),
+            '}' => Some(Token::create(TokenKind::RightBrace, loc)),
+            ',' => Some(Token::create(TokenKind::Comma, loc)),
+            '.' => Some(Token::create(TokenKind::Dot, loc)),
+            ';' => Some(Token::create(TokenKind::Semicolon, loc)),
+            '+' => Some(Token::create(TokenKind::Plus, loc)),
+            '-' => Some(Token::create(TokenKind::Minus, loc)),
+            '*' => Some(Token::create(TokenKind::Star, loc)),
         //One or two characters
             '!' => {
                 let b = self.match_next('=');
-                self.add_token(if b {TokenKind::BangEqual} else {TokenKind::Bang});
+                Some(Token::create(if b {TokenKind::BangEqual} else {TokenKind::Bang}, loc))
             }
             '=' => {
                 let b = self.match_next('=');
-                self.add_token(if b {TokenKind::EqualEqual} else {TokenKind::Equal});
+                Some(Token::create(if b {TokenKind::EqualEqual} else {TokenKind::Equal}, loc))
             }
             '<' => {
                 let b = self.match_next('=');
-                self.add_token(if b {TokenKind::LessEqual} else {TokenKind::Less});
+                Some(Token::create(if b {TokenKind::LessEqual} else {TokenKind::Less}, loc))
             }
             '>' => {
                 let b = self.match_next('=');
-                self.add_token(if b {TokenKind::GreaterEqual} else {TokenKind::Greater});
+                Some(Token::create(if b {TokenKind::GreaterEqual} else {TokenKind::Greater}, loc))
             }
         //Possibly comment
             '/' => {
@@ -209,24 +207,29 @@ impl Lexer {
                     while self.peek() != '\n' && !self.is_at_end() {
                         self.advance();
                     }
+                    None
                 } else {
-                    self.add_token(TokenKind::Slash);
+                    Some(Token::create(TokenKind::Slash, loc))
                 }
             }
         //Number
-            c if c.is_numeric()  => self.handle_number(),
+            c if c.is_numeric()  => Some(self.handle_number()),
         //Identifier
-            c if c.is_ascii_alphabetic() => self.handle_indentifier(),
+            c if c.is_ascii_alphabetic() => Some(self.handle_indentifier()),
         //Whitespace 
         //todo: I dont know if '\0' should be considered whitespace
-            '\r' | '\t' | '\0' | ' ' => {},
+            '\r' | '\t' | '\0' | ' ' => None,
             '\n' => {
                 self.line += 1;
                 self.col = 0;
+                None
             }
         //String Literals
-            '"' => self.handle_string(),
-            unexpected_char => self.report_err(loc, format!("{} ({}) Unexpected character", unexpected_char, unexpected_char as i32))
+            '"' => Some(self.handle_string()),
+            unexpected_char => {
+                self.report_err(loc, format!("{} ({}) Unexpected character", unexpected_char, unexpected_char as i32));
+                None
+            }
         }
     }
 }
