@@ -7,6 +7,7 @@ mod statement;
 mod expression;
 mod enviroment;
 mod loc_error;
+mod literal_value;
 
 use std::{fs, io::{Error, Write}};
 use parser::Parser;
@@ -44,5 +45,10 @@ fn run(interpreter: &mut Interpreter, filepath: String, source: String) {
 
     let tokens = lexer.lex(filepath, source);
     let stmts = parser.parse(tokens);
+
+    for s in &stmts {
+        println!("{}", s);
+    }
+
     interpreter.interpret(stmts);
 }

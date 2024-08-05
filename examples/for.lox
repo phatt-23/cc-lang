@@ -1,0 +1,40 @@
+var p = 12;
+
+if (p < 13) {
+    p = p + 1;
+    print p;
+    print "hello";
+}
+
+print "-----------------------------------";
+
+for (var i = 0; i < 10; i = i + 1) {
+    print i;
+}
+
+print "-----------------------------------";
+
+{
+    var j = 0;
+    {
+        {
+            for (; j < 10; j = j + 1) 
+                print j;
+        }
+    }
+}
+
+print "-----------------------------------";
+
+{
+    {
+        var a = 0;
+        var temp;
+        for (var b = 1; a < 10000; b = b + temp) {
+            print a;
+            temp = a;
+            a = b;
+        }
+
+    }
+}

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::expression::LitVal;
+use crate::literal_value::LitVal;
 
 #[derive(Debug, Clone)]
 pub struct Enviroment {

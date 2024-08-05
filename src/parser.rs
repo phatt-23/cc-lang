@@ -1,7 +1,8 @@
 use crate::token::{Token, TokenKind};
 use crate::statement::Stmt;
-use crate::expression::{Expr, LitVal};
+use crate::expression::Expr;
 use crate::loc_error::LocErr;
+use crate::literal_value::LitVal;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -70,7 +71,7 @@ impl Parser {
 
 	    while !self.is_at_end() {
 	        let stmt = self.declaration();
-	        match stmt {
+            match stmt {
     	    	Ok(s) => stmts.push(s),
     	    	Err(err) => {
     	    	    errs.push(err);
@@ -111,14 +112,14 @@ impl Parser {
                                     self.advance();
                                     self.expression()?
                                 } else {
-                                    Expr::Literal { value: LitVal::Nil }
+                                    Expr::new_literal(LitVal::Nil)
                                 };
 
                 self.consume(
                     TokenKind::Semicolon, 
                     format!("Expected semicolon ';' denoting end of variable declaration, instead found {:?}.", self.peek().kind())
                 )?;
-                Ok(Stmt::Var { ident, expression })
+                Ok(Stmt::new_var(ident, expression))
             }
             any => Err(LocErr {loc: self.peek().loc().clone(), msg: format!("Expected Identifier after `var` keyword, but found {:?}.", any)})
         }
@@ -132,8 +133,80 @@ impl Parser {
 	        TokenKind::Print => self.print_statement(),
             TokenKind::If => self.if_statement(),
             TokenKind::While => self.while_statement(),
+            TokenKind::For => self.for_statement(),
 	        _ => self.expression_statement(),
 	    }
+    }
+
+    fn for_statement(&mut self) -> Result<Stmt, LocErr> {
+        self.advance();
+        /* for (initializer ; condition ; increment) {}
+         *  initializer = variable_declaration | expression | nothing
+         *  condition = nothing (true) | expression
+         *  increment = expression 
+        */
+
+        /*   Same semantics (sugar):
+         *      for (var i = 0; i < 10; i = i + 1) {
+         *          ...
+         *      }
+         *
+         *   as this (desugared):
+         *      {
+         *          var i = 0;
+         *          while (i < 10) {
+         *              ...
+         *              i = i + 1;
+         *          }
+         *      }
+         *   Exactly the same as this block statement using while loop.
+         */
+
+        self.consume(TokenKind::LeftParen, "Expected left parenthesis '(' after `for`.".to_string())?;
+        let initializer = match self.peek().kind() {
+            TokenKind::Semicolon => {
+                self.advance();
+                None
+            }
+            TokenKind::Var => {
+                Some(self.var_declaration()?)
+            }
+            _ => Some(self.expression_statement()?)
+        };
+
+        let condition = match self.peek().kind() {
+            TokenKind::Semicolon => {
+                Expr::new_literal(LitVal::Bool(true))
+            }
+            _ => self.expression()?
+        };
+        self.consume(TokenKind::Semicolon, "Expected semicolon ';' after for loop condition.".to_string())?;
+
+        let increment = match self.peek().kind() {
+            TokenKind::RightParen => None,
+            _ => Some(self.expression()?)
+        };
+        self.consume(TokenKind::RightParen, "Expected right parenthesis ')' to close the `for`.".to_string())?;
+        let for_body = self.statement()?;
+
+        let mut desugared: Stmt = for_body;
+
+        if let Some(inc) = increment {
+            // if the body of the for loop was just a single statement (without braces that would make it a block statement)
+            // make block statement out of it, if it's already a block statement just push the increment expression in there
+            match desugared {
+                Stmt::Block { ref mut statements } => statements.push(Stmt::new_expr(inc)),
+                _ => desugared = Stmt::new_block(vec![desugared, Stmt::Expression { expression: inc }])
+            }
+        }
+
+        desugared = Stmt::new_while(condition, Box::from(desugared));
+
+        if let Some(init) = initializer {
+            desugared = Stmt::new_block(vec![init, desugared]);
+        }
+
+        Ok(desugared)
     }
 
     fn while_statement(&mut self) -> Result<Stmt, LocErr> {
@@ -145,9 +218,7 @@ impl Parser {
         // TODO: Catch this error and say that while requires a body
         let body = Box::from(self.statement()?);
 
-        Ok(Stmt::While {
-            condition, body
-        })
+        Ok(Stmt::new_while(condition, body))
     }
     
     fn if_statement(&mut self) -> Result<Stmt, LocErr> {
@@ -164,11 +235,7 @@ impl Parser {
             Some(Box::from(self.statement()?))
         } else {None};
         
-        Ok(Stmt::If {
-            condition,
-            then_stmt: then_b,
-            else_stmt: else_b,
-        })
+        Ok(Stmt::new_if(condition, then_b, else_b))
     }
     
     fn block_statement(&mut self) -> Result<Stmt, LocErr> {
@@ -181,26 +248,20 @@ impl Parser {
         }
 
         self.consume(TokenKind::RightBrace, format!("{} Expected a right brace '}}' denoting end of a block statement.", self.peek().loc()))?;
-        Ok(Stmt::Block {
-            statements: stmts
-        })
+        Ok(Stmt::new_block(stmts))
     }
 
     fn print_statement(&mut self) -> Result<Stmt, LocErr> {
         self.advance();
         let expr = self.expression()?;
         self.consume(TokenKind::Semicolon, format!("{} Expected a semicolon ';' after expression denoting end of statement.", self.peek().loc()))?;
-        Ok(Stmt::Print {
-            expression: expr
-        })
+        Ok(Stmt::new_print(expr))
     }
 
     fn expression_statement(&mut self) -> Result<Stmt, LocErr> {
         let expr = self.expression()?;
         self.consume(TokenKind::Semicolon, format!("{} Expected a semicolon ';' after expression denoting end of statement.", self.peek().loc()))?;
-        Ok(Stmt::Expression {
-            expression: expr
-        })
+        Ok(Stmt::new_expr(expr))
     }
 
     //AST Syntax Expr -----------------------------------
@@ -302,7 +363,48 @@ impl Parser {
             let expr = self.unary()?;
             return Ok(Expr::new_unary(op, expr))
         }
-        self.primary()
+        self.call()
+    }
+
+    fn call(&mut self) -> Result<Expr, LocErr> {
+        let mut expr = self.primary()?;
+
+        loop {
+            match self.peek().kind() {
+                TokenKind::LeftParen => {
+                    self.advance();
+                    expr = self.finish_call(expr)?;
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, callee: Expr) -> Result<Expr, LocErr> {
+        const MAX_ARGS: usize = 255;
+        
+        let mut arguments: Vec<Expr> = vec![];
+        if !matches!(self.peek().kind(), TokenKind::RightParen) {
+            loop {
+                let arg = self.expression()?;
+                arguments.push(arg);
+                
+                if arguments.len() >= MAX_ARGS {
+                    return Err(LocErr::new(self.peek().loc(), format!("Exceeded the maximum number of arguments in a function call ({}).", MAX_ARGS)))
+                }
+
+                if !matches!(self.peek().kind(), TokenKind::Comma) {
+                    break;
+                }
+                self.advance();
+            }
+        }
+        
+        let right_paren = self.consume(TokenKind::RightParen, format!("Expected a right parenthesis ')' to end the list of passed arguments to a function call. Insted found {:?}", self.peek().kind()))?;
+        
+        Ok(Expr::new_call(Box::from(callee), arguments, right_paren.clone()))
     }
 
     fn primary(&mut self) -> Result<Expr, LocErr> {

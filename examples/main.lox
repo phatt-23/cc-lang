@@ -11,7 +11,7 @@ var b = 12;
 print a; // This is a comment
 print b;
 print a + b;
-print a *b;
+print a * b;
 
 {
     var l = 90;
@@ -24,6 +24,7 @@ var c = "global c";
 {
     var a = "outer a";
     var b = "outer b";
+    var g = "outer g";
     {
         var a = "inner a";
         print a;
@@ -31,22 +32,27 @@ var c = "global c";
         print c;
         var d = "inner d";
         print d;
+        print g;
+        g = "modded g";
+        print g;
     }
     print a;
     print b;
     print c;
     print d;
+    print g;
 }
 print a;
 print b;
 print c;
 print d;
+print g;
 
 {
-    print "----------------------------------";
     var a = 2;
     var b = 0;
 
+    print "IF-ELSE clause";
     if (a and b) {
         print "inside THEN branch";
     } else {
@@ -108,4 +114,8 @@ print d;
         print h;
     }
     print h;
+}
+
+for (var i = 0; i < 10; i = i + 1) {
+    print i;
 }

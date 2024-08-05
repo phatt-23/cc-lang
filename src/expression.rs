@@ -1,9 +1,6 @@
-use crate::{enviroment::Enviroment, loc_error::LocErr, token::{Token, TokenKind}};
+use crate::{enviroment::Enviroment, literal_value::LitVal, loc_error::LocErr, token::{Token, TokenKind}};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum LitVal { Int(i32), Double(f64), String(String), Bool(bool), Nil }
-
-#[derive(Debug, Clone)]
 pub enum Expr {
     Literal  { value: LitVal },
     Grouping { expr: Box<Expr> },
@@ -12,6 +9,7 @@ pub enum Expr {
     Var      { ident: Token },
     Assign   { target: Token, value: Box<Expr> },
     Logical  { operator: Token, left: Box<Expr>, right: Box<Expr> },
+	Call     { callee: Box<Expr>, arguments: Vec<Expr>, right_paren: Token },
 }
 
 impl Expr {
@@ -38,9 +36,36 @@ impl Expr {
     pub fn new_logical(left: Expr, operator: Token, right: Expr) -> Self {
         Self::Logical { operator, left: Box::from(left), right: Box::from(right) }
     }
-    
+
+	pub fn new_call(callee: Box<Expr>, arguments: Vec<Expr>, right_paren: Token) -> Self{
+		Self::Call { callee, arguments, right_paren }
+	}
+}
+
+impl Expr {
     pub fn evaluate(&self, env: &mut Enviroment) -> Result<LitVal, LocErr> {
     	match self {
+			Expr::Call { callee, arguments, right_paren } => {
+				println!("Calling: {}", self);
+				let callable = callee.evaluate(env)?;
+
+				match &callable {
+					LitVal::Callable { ident, arity, func } => {
+						if *arity as usize != arguments.len() {
+							return Err(LocErr::new(right_paren.loc(), format!("Callable `{}` expects {} arguments, but got {}. Arity check failed.", &ident, &arity, arguments.len())))
+						}
+
+						let mut evaled_args = vec![];
+						for arg in arguments {
+							let evaled_arg = arg.evaluate(env)?;
+							evaled_args.push(evaled_arg);
+						}  
+
+						Ok(func(evaled_args))
+					}
+					any => Err(LocErr::new(right_paren.loc(), format!("Trying to call {} of value {}, which is not callable.", callee, any)))
+				}
+			}
     	    Expr::Literal { value } => Ok(value.clone()),
     	    Expr::Grouping { expr } => (*expr).evaluate(env),
     	    Expr::Unary { operator, expr } => {
@@ -76,9 +101,8 @@ impl Expr {
             }
             Expr::Logical { operator, left, right } => {
                 let left = left.evaluate(env)?;
-
                 match operator.kind() {
-                    TokenKind::And => {
+					TokenKind::And => {
                         if left.is_truthy() == LitVal::Bool(false) {
                             return Ok(left);
                         }
@@ -194,19 +218,8 @@ impl Expr {
             			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on non-numerical or non-boolean values {} and {}", operator.kind(), l, r)))
             			}
         		    }
-        		    TokenKind::And => {
-            			match (left, right) {
-            			    (Bool(x), Bool(y)) => Ok(Bool(x && y)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Cannot perform {:?} operation on {} and {}. Operands must be boolean.", operator.kind(), l, r)))
-            			}
-        		    }
-        		    TokenKind::Or => {
-            			match (left, right) {
-            			    (Bool(x), Bool(y )) => Ok(Bool(x || y)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Cannot perform {:?} operation on {} and {}. Operands msut be boolean.", operator.kind(), l, r)))
-            			}
-        		    }
-        		    e => Err(LocErr::new(operator.loc(), format!("operator.kind() operator {:?}", e)))
+        		    TokenKind::And | TokenKind::Or => unreachable!("Logical operations are not no be processed by the Binary branch."),
+        		    e => Err(LocErr::new(operator.loc(), format!("Undefined binary operator {}.", e)))
         		}
     	    }
     	}
@@ -222,16 +235,18 @@ impl LitVal {
     	    LitVal::String(x) => LitVal::Bool(x.is_empty()),
     	    LitVal::Bool(x) => LitVal::Bool(!x),
     	    LitVal::Nil => LitVal::Bool(true),
+			LitVal::Callable { ident, arity, func: _ } => todo!("Can you even call this on a callable? {} {}", ident, arity),
     	}
     }
 
     pub fn is_truthy(&self) -> LitVal {
-    	match self {
-    	    LitVal::Int(x) => LitVal::Bool(*x != 0_i32),
-    	    LitVal::Double(x) => LitVal::Bool(*x != 0.0_f64),
-    	    LitVal::String(x) => LitVal::Bool(!x.is_empty()),
-    	    LitVal::Bool(x) => LitVal::Bool(*x),
-    	    LitVal::Nil => LitVal::Bool(false),
+		match self {
+			LitVal::Int(x) 		=> LitVal::Bool(*x != 0_i32),
+    	    LitVal::Double(x) 	=> LitVal::Bool(*x != 0.0_f64),
+    	    LitVal::String(x) 	=> LitVal::Bool(!x.is_empty()),
+    	    LitVal::Bool(x) 	=> LitVal::Bool(*x),
+    	    LitVal::Nil 		=> LitVal::Bool(false),
+			LitVal::Callable { ident, arity, func: _ } => todo!("Can you even call this on a callable? {} {}", ident, arity),
     	}
     }
 }
@@ -248,12 +263,13 @@ impl std::fmt::Display for LitVal {
     // }
 
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    	match self {
-            LitVal::Int(v)    => write!(f, "{}", v),
-            LitVal::Double(v) => write!(f, "{}", v),
-            LitVal::String(v) => write!(f, "{}", v),
-            LitVal::Bool(v)   => write!(f, "{}", if *v {"true"} else {"false"}),
-            LitVal::Nil       => write!(f, "nil"),
+		match self {
+			LitVal::Int(v)    => write!(f, "{}", v),
+			LitVal::Double(v) => write!(f, "{}", v),
+			LitVal::String(v) => write!(f, "\"{}\"", v),
+			LitVal::Bool(v)   => write!(f, "{}", v),
+			LitVal::Nil       => write!(f, "nil"),
+			LitVal::Callable { ident, arity, func: _ } => write!(f, "{}/{}", ident, arity),
         }
     }
 }
@@ -262,47 +278,35 @@ impl std::fmt::Display for LitVal {
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+			Self::Call { callee, arguments, right_paren: _ } => {
+				let formatted_args: Vec<String> = 
+					arguments
+						.iter()
+						.map(|arg| format!("{}", arg))
+						.collect();
+
+				write!(f, "({} ({}))", callee, formatted_args.join(" "))
+			}
             Self::Literal { value } => {
-        		write!(f, "{}", value)
-            }
+				write!(f, "{}", value)
+			}
             Self::Grouping { expr } => {
-                write!(f, "{}", expr)
+                write!(f, "({})", expr)
             }
             Self::Unary { operator, expr } => {
-                match operator.kind() {
-                    TokenKind::Minus => write!(f, "(- {})", expr),
-                    TokenKind::Bang  => write!(f, "(! {})", expr),
-                    err => todo!("Unary operator {:?} not supported", err),
-                }
+				write!(f, "({} {})", operator.kind(), expr)
             }
-            Self::Var { ident: _ } => {
-                Ok(())
+            Self::Var { ident } => {
+                write!(f, "(var {})", ident.kind())
             }
-            Self::Assign { target: _, value: _ } => {
-                Ok(())
+            Self::Assign { target, value } => {
+                write!(f, "(setq {} {})", target.kind(), value)
             }
-            Self::Logical { operator: _, left: _, right: _ } => {
-                dbg!(&self);
-                todo!()
-                // match operator.kind() {
-                // }
+            Self::Logical { operator, left, right } => {
+				write!(f, "({} {} {})", operator.kind(), left, right)
             }
             Self::Binary { operator, left, right } => {
-                match operator.kind() {
-                    TokenKind::Plus         => write!(f, "(+ {} {})", left, right),
-                    TokenKind::Minus        => write!(f, "(- {} {})", left, right),
-                    TokenKind::Star         => write!(f, "(* {} {})", left, right),
-                    TokenKind::Slash        => write!(f, "(/ {} {})", left, right),
-                    TokenKind::EqualEqual   => write!(f, "(== {} {})", left, right),
-                    TokenKind::BangEqual    => write!(f, "(!= {} {})", left, right),
-                    TokenKind::Less         => write!(f, "(< {} {})", left, right),
-                    TokenKind::LessEqual    => write!(f, "(<= {} {})", left, right),
-                    TokenKind::Greater      => write!(f, "(> {} {})", left, right),
-                    TokenKind::GreaterEqual => write!(f, "(>= {} {})", left, right),
-                    TokenKind::And          => write!(f, "(and {} {})", left, right),
-                    TokenKind::Or           => write!(f, "(or {} {})", left, right),
-                    err => todo!("Binary operator {:?} not supported", err),
-                }
+				write!(f, "({} {} {})", operator.kind(), left, right)
             }
         }
     }
