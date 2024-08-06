@@ -1,8 +1,8 @@
 use crate::token::{Token, TokenKind};
 use crate::statement::Stmt;
 use crate::expression::Expr;
-use crate::loc_error::LocErr;
 use crate::literal_value::LitVal;
+use crate::loc_error::LocErr;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -49,6 +49,16 @@ impl Parser {
             Err(LocErr {loc: self.peek().loc().clone(), msg})
         }
     }
+    
+    /* Same as consume() but doesnt advance the counter
+    */
+    fn check(&mut self, tok_kind: TokenKind, msg: String) -> Result<&Token, LocErr> { 
+        if *self.peek().kind() == tok_kind {
+            Ok(self.peek())
+        } else {
+            Err(LocErr {loc: self.peek().loc().clone(), msg})
+        }
+    }
 
     fn synchronize(&mut self) {
         use TokenKind::*;
@@ -60,6 +70,7 @@ impl Parser {
             self.advance();
         }
     }
+
 }
 
 impl Parser {
@@ -87,22 +98,57 @@ impl Parser {
 	    stmts
     }
 
-    //AST Syntax Stmt -----------------------------------
+    // AST Syntax Stmt -----------------------------------
     fn declaration(&mut self) -> Result<Stmt, LocErr> {
-        let tok = self.peek();
-        if matches!(tok.kind(), TokenKind::Var) {
-            let var_decl = self.var_declaration();
-            match var_decl {
-                Ok(stmt) => return Ok(stmt),
-                Err(msg) => {
-                    self.synchronize();
-                    return Err(msg);
-                }
-            }
+        match self.peek().kind() {
+            TokenKind::Var => self.var_declaration(),
+            TokenKind::Fun => self.function_declaration(),
+            _ => self.statement(),
         }
-        self.statement()
     }
     
+    // Declarations
+    fn function_declaration(&mut self) -> Result<Stmt, LocErr> {
+        self.advance();
+        let ident = if let TokenKind::Identifier(_) = self.peek().kind() {
+                        self.advance().clone()
+                    } else {
+                        return Err(LocErr::new(self.peek().loc(), format!("Expected a function identifier but got {}.", self.peek().kind())))
+                    };
+        
+        self.consume(TokenKind::LeftParen, "Expected left parenthesis '(' after function identifier.".to_string())?;
+        let mut params = vec![];
+        if !matches!(self.peek().kind(), TokenKind::RightParen) {
+            const MAX_PARAMS: usize = 0xFF;
+            loop {
+                if params.len() >= MAX_PARAMS {
+                    return Err(LocErr::new(self.peek().loc(), format!("Exceeded the maximum number ({}) of parameters a function can have.", MAX_PARAMS)))
+                }
+                
+                match self.peek().kind() {
+                    TokenKind::Identifier(_) => params.push(self.advance().clone()),
+                    _ => return Err(LocErr::new(self.peek().loc(), format!("Expected an identifier as a parameter, instead found {}.", self.peek().kind())))
+                }
+
+                if *self.peek().kind() != TokenKind::Comma {
+                    break;
+                }
+
+                self.advance();
+            }
+        }
+        self.consume(TokenKind::RightParen, "Expected right parenthesis ')' after parameters.".to_string())?;
+
+        self.check(TokenKind::LeftBrace, "Expected a left brace '{' denoting function body.".to_string())?;
+
+        let body = match self.block_statement()? {
+            Stmt::Block { statements } => statements.iter().map(|s| Box::from(s.clone())).collect(),
+            _ => unreachable!("It must a block, it starts with '{{'")
+        };
+
+        Ok(Stmt::new_function(ident, params, body))
+    }
+
     fn var_declaration(&mut self) -> Result<Stmt, LocErr> {
         self.advance();
         let ident = self.advance().clone();
@@ -125,10 +171,10 @@ impl Parser {
         }
     }
 
+    // Statements
     fn statement(&mut self) -> Result<Stmt, LocErr> {
         // TODO: Change this to advance()
-        let tok = self.peek();
-	    match tok.kind() {
+	    match self.peek().kind() {
             TokenKind::LeftBrace => self.block_statement(),
 	        TokenKind::Print => self.print_statement(),
             TokenKind::If => self.if_statement(),
@@ -145,7 +191,6 @@ impl Parser {
          *  condition = nothing (true) | expression
          *  increment = expression 
         */
-
         /*   Same semantics (sugar):
          *      for (var i = 0; i < 10; i = i + 1) {
          *          ...

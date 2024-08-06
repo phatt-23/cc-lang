@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{enviroment::Enviroment, literal_value::LitVal, loc_error::LocErr, token::{Token, TokenKind}};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -13,6 +15,7 @@ pub enum Expr {
 }
 
 impl Expr {
+	// Constructors
     pub fn new_binary(left: Expr , operator: Token, right: Expr) -> Self {
         Self::Binary { operator, left: Box::from(left), right: Box::from(right) }
     }
@@ -43,25 +46,24 @@ impl Expr {
 }
 
 impl Expr {
-    pub fn evaluate(&self, env: &mut Enviroment) -> Result<LitVal, LocErr> {
+    pub fn evaluate(&self, env: Rc<RefCell<Enviroment>>) -> Result<LitVal, LocErr> {
     	match self {
 			Expr::Call { callee, arguments, right_paren } => {
 				println!("Calling: {}", self);
-				let callable = callee.evaluate(env)?;
+				let callable = callee.evaluate(env.clone())?;
 
 				match &callable {
-					LitVal::Callable { ident, arity, func } => {
+					LitVal::Callable { ident, arity, ref func } => {
 						if *arity as usize != arguments.len() {
-							return Err(LocErr::new(right_paren.loc(), format!("Callable `{}` expects {} arguments, but got {}. Arity check failed.", &ident, &arity, arguments.len())))
+							return Err(LocErr::new(right_paren.loc(), format!("Callable `{}` expects {} arguments, but received {}. Arity check failed.", &ident, &arity, arguments.len())))
 						}
 
 						let mut evaled_args = vec![];
 						for arg in arguments {
-							let evaled_arg = arg.evaluate(env)?;
+							let evaled_arg = arg.evaluate(env.clone())?;
 							evaled_args.push(evaled_arg);
 						}  
-
-						Ok(func(evaled_args))
+						Ok(func(env, evaled_args))
 					}
 					any => Err(LocErr::new(right_paren.loc(), format!("Trying to call {} of value {}, which is not callable.", callee, any)))
 				}
@@ -80,27 +82,25 @@ impl Expr {
     	    }
             Expr::Assign { target, value } => {
                 if let TokenKind::Identifier(i) = target.kind() {
-                    let v = value.evaluate(env)?;
-                    return match env.assign(i, v.clone()) {
+                    let v = value.evaluate(env.clone())?;
+                    return match env.as_ref().borrow_mut().assign(i, v.clone()) {
                         Some(_) => Ok(v),
                         None => Err(LocErr::new(target.loc(), format!("Can't assign {} to an undeclared target {}.", v, i)))
                     }
                 }
-                // TODO: Try with "hello" = 12;
                 unreachable!("{} Target must be an identifier", target.loc());
             }
             Expr::Var { ident } => {
 				if let TokenKind::Identifier(i) = ident.kind() {
-					match env.get(i) {
+					match env.as_ref().borrow().get(i) {
 						Some(value) => return Ok(value.clone()),
 						None => return Err(LocErr::new(ident.loc(), format!("Variable {} is undeclared.", i)))
 					}
 				}
-                // todo: Try with var "hello" = 23;
 				unreachable!("{} Totally fucked up. {:?} is not an identifier.", ident.loc(), ident.kind());
             }
             Expr::Logical { operator, left, right } => {
-                let left = left.evaluate(env)?;
+                let left = left.evaluate(env.clone())?;
                 match operator.kind() {
 					TokenKind::And => {
                         if left.is_truthy() == LitVal::Bool(false) {
@@ -119,7 +119,7 @@ impl Expr {
             }
     	    Expr::Binary { operator, left, right } => {
         		use LitVal::*;
-        		let left = left.evaluate(env)?;
+        		let left = left.evaluate(env.clone())?;
         		let right = right.evaluate(env)?;
 
         		match operator.kind() {

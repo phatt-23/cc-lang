@@ -1,15 +1,11 @@
-use crate::{enviroment::Enviroment, literal_value::LitVal, loc_error::LocErr, statement::Stmt, token::TokenKind};
-use std::rc::Rc;
+use crate::{enviroment::Enviroment, literal_value::LitVal, loc_error::LocErr, statement::Stmt, token::{Token, TokenKind}};
+use std::{cell::RefCell, rc::Rc};
 
 pub struct Interpreter {
-    enviroment_stack: Vec<Enviroment>,
+    pub enviroment: Rc<RefCell<Enviroment>>,
 }
 
 // example function
-fn clock_native_func(_args: Vec<LitVal>) -> LitVal {
-    let time = std::time::SystemTime::now().elapsed().unwrap().as_micros();
-    LitVal::Int(time as i32)
-}
 
 impl Interpreter {
     pub fn new() -> Self {
@@ -18,13 +14,22 @@ impl Interpreter {
         let f = LitVal::Callable { 
             ident: String::from("clock"), 
             arity: 0, 
-            func: Rc::new(clock_native_func) 
+            func: Rc::new(|_, _| -> LitVal {
+                let time = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs();
+                LitVal::Int(time as i32)
+            })
         };
 
         global_env.define(String::from("clock"), f);
         
         Self {
-            enviroment_stack: vec![global_env],
+            enviroment: Rc::new(RefCell::new(global_env)),
+        }
+    }
+
+    pub fn new_closure(enclosing: Rc<RefCell<Enviroment>>) -> Self {
+        Self {
+            enviroment: Rc::new(RefCell::new(Enviroment::new_local(enclosing)))
         }
     }
 
@@ -35,44 +40,91 @@ impl Interpreter {
 
         for stmt in stmts {
             match stmt {
-                Stmt::While { condition, body } => {
-                    let current_env = self.enviroment_stack.last_mut().expect("There must be current enviroment, at least one enviroment, the global one.");
-                    let condition_result = condition.evaluate(current_env);
+                Stmt::Function { ident, params, body } => {
+                    let function_identifer = match ident.kind() {
+                        TokenKind::Identifier(value) => value,
+                        _ => unreachable!("{} Can't use {:?} as a function identifier.", ident.loc(), ident.kind())
+                    };
+                    
+                    // deep copy of params and body
+                    let parameters: Vec<Token> = params.iter().map(|p| p.clone()).collect();
+                    let statements: Vec<Box<Stmt>> = body.iter().map(|b| b.clone()).collect(); 
 
+                    // define the closure
+                    let func_impl = move |parent_env: Rc<RefCell<Enviroment>>, args: Vec<LitVal>| -> LitVal {
+                        let mut closure_interp = Interpreter::new_closure(parent_env);
+
+                        for (index, arg) in args.iter().enumerate() {
+                            let param_ident = match params[index].kind() {
+                                TokenKind::Identifier(ident) => ident.clone(),
+                                _ => unreachable!("Parameter in the `params` vector should be Identifier.")
+                            };
+                            closure_interp.enviroment.borrow_mut().define(param_ident, arg.clone());
+                        }
+                        
+                        for i in 0..body.len() {
+                            closure_interp.interpret(vec![*statements[i].clone()]);
+                        }
+
+                        return LitVal::Nil
+                    };
+
+                    let function_declaration = LitVal::Callable { 
+                       ident: function_identifer.clone(), 
+                       arity: parameters.len(), 
+                       func: Rc::new(func_impl),
+                    };
+
+                    self.enviroment.borrow_mut().define(function_identifer.clone(), function_declaration);
+                }
+                Stmt::Var { ident, expression } => {
+                    let ident = match ident.kind() {
+                        TokenKind::Identifier(value) => value,
+                        _ => unreachable!("{} Can't use {:?} as a variable identifier.", ident.loc(), ident.kind())
+                    };
+
+                    let value = match expression.evaluate(self.enviroment.clone()) {
+                        Ok(val) => val,
+                        Err(err) => {
+                            print_err(&err);
+                            continue;
+                        }
+                    };
+                    
+                    self.enviroment.borrow_mut().define(ident.clone(), value);
+                }
+                Stmt::While { condition, body } => {
                     let body = match *body {
                         Stmt::Block { statements } => statements,
                         any => vec![any]
                     };
-                    
-                    match condition_result {
-                        Ok(mut cond) => {
-                            while cond.is_truthy() == LitVal::Bool(true) {
-                                self.interpret(body.clone());
-                                let current_env = self.enviroment_stack.last_mut().expect("There must be current enviroment, at least one enviroment, the global one.");
-                                
-                                match condition.evaluate(current_env) {
-                                    Ok(new_cond) => cond = new_cond,
-                                    Err(err) => {
-                                        print_err(&err);
-                                        continue;
-                                    }
-                                }
-                            }
-                        }
+
+                    let mut cond = match condition.evaluate(self.enviroment.clone()) {
+                        Ok(value) => value,
                         Err(err) => {
                             print_err(&err);
                             continue;
+                        }
+                    };
+                    
+                    while cond.is_truthy() == LitVal::Bool(true) {
+                        self.interpret(body.clone());
+                        
+                        cond = match condition.evaluate(self.enviroment.clone()) {
+                            Ok(value) => value,
+                            Err(err) => {
+                                print_err(&err);
+                                continue;
+                            }
                         }
                     }
 
                 }
                 Stmt::If { condition, then_stmt, else_stmt } => {
-                    let current_env = self.enviroment_stack.last_mut().expect("There must be current enviroment, at least one enviroment, the global one.");
+                    let cond_expr = condition.evaluate(self.enviroment.clone());
 
-                    let cond_expr = condition.evaluate(current_env);
                     match cond_expr {
                         Ok(cond) => {
-                            // shortcicuiting
                             if matches!(cond.is_truthy(), LitVal::Bool(true)) {
                                 self.interpret(vec![*then_stmt])
                             } else if let Some(else_stmt) = else_stmt {
@@ -86,24 +138,17 @@ impl Interpreter {
                     }
                 }
                 Stmt::Block { statements } => {
-                    let current_env = self.enviroment_stack.pop().expect("There must be current enviroment, at least one enviroment, the global one.");
-                    // crate the local inner enviroment with 
-                    // push local env with current env onto stack
-                    let local_env = Enviroment::new_local(Box::from(current_env));
-                    self.enviroment_stack.push(local_env);
+                    let enclosing_env = self.enviroment.clone();
+                    let block_env = Enviroment::new_local(self.enviroment.clone());
+                    
+                    self.enviroment = Rc::new(RefCell::new(block_env));
 
                     self.interpret(statements);
-
-                    let local_env = self.enviroment_stack.pop().expect("Should be unreachable. There's no enviroment to pop.");
                     
-                    // the the old enviroment back to the stack
-                    // check that the stack is at least filled with the global enviroment
-                    self.enviroment_stack.push(*local_env.enclosing.expect("The enclosing enviroment should be there we just set it."));
-                    assert!(!self.enviroment_stack.is_empty(), "Can't pop the global enviroment. Now the enviroment stack is empty.");
+                    self.enviroment = enclosing_env;
                 }
                 Stmt::Expression { expression } => {
-                    let current_env = self.enviroment_stack.last_mut().expect("There must be current enviroment, at least one enviroment, the global one.");
-                    let expr = expression.evaluate(current_env);
+                    let expr = expression.evaluate(self.enviroment.clone());
                     
                     match expr {
                         Ok(_) => {}
@@ -113,31 +158,13 @@ impl Interpreter {
                     }
                 }
                 Stmt::Print { expression } => {
-                    let current_env = self.enviroment_stack.last_mut().expect("There must be current enviroment, at least one enviroment, the global one.");
-                    let expr = expression.evaluate(current_env);
+                    let expr = expression.evaluate(self.enviroment.clone());
                     
                     match expr {
                         Ok(val) => println!("{}", val),
                         Err(err) => {
                             print_err(&err);
                         }
-                    }
-                }
-                Stmt::Var { ident, expression } => {
-                    match ident.kind() {
-                        TokenKind::Identifier(i) => {
-                            let current_env = self.enviroment_stack.last_mut().expect("There must be current enviroment, at least one enviroment, the global one.");
-
-                            let expr = expression.evaluate(current_env);
-
-                            match expr {
-                                Ok(val) => current_env.define(i.clone(), val),
-                                Err(err) => {
-                                    print_err(&err);
-                                }
-                            }
-                        }
-                        _ => unreachable!("{} Can't use {:?} as a variable identifier.", ident.loc(), ident.kind())
                     }
                 }
             }

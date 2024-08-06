@@ -1,0 +1,44 @@
+var global = "I'm global";
+
+{
+    print global;
+}
+
+fun add(a, b) {
+    print "I'm global function `add`";
+    print a + b;
+}
+
+add(1, 2);
+
+print global;
+
+print a;
+print b;
+
+{
+    print global;
+}
+
+{
+    add(4, 9);
+    {
+        {
+            fun mul(a, b) {
+                print "I'm a local function `mul`";
+                print a * b;
+            }
+
+            {
+                add(9, 10);
+            }
+            
+            mul ("hello", 10);
+
+            mul(8, 7);
+        }
+        mul (10, 9);
+    }
+    mul (2, 9);
+}
+mul (4, 9);

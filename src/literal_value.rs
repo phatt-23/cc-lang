@@ -1,4 +1,5 @@
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
+use crate::enviroment::Enviroment;
 
 
 #[derive(Clone)]
@@ -10,11 +11,10 @@ pub enum LitVal {
 	Nil,
 	Callable { 
 		ident: String, 
-		arity: u8,
-		func: Rc<dyn Fn(Vec<LitVal>) -> LitVal>
+		arity: usize,
+		func: Rc<dyn Fn(Rc<RefCell<Enviroment>>, Vec<LitVal>) -> LitVal>
 	},
 }
-
 
 impl std::fmt::Debug for LitVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
