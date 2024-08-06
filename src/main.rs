@@ -50,5 +50,12 @@ fn run(interpreter: &mut Interpreter, filepath: String, source: String) {
         println!("{}", s);
     }
 
-    interpreter.interpret(stmts);
+    let interp_result = interpreter.interpret(stmts);
+    match interp_result {
+        Ok(_) => {}
+        Err(ret) => {
+            println!("[ERROR][interp-global] {} Called `return` at global level with value {}.", ret.location, ret.value);
+        }
+    }
+
 }

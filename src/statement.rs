@@ -3,13 +3,14 @@ use crate::token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Expression { expression: Expr },
-    Print { expression: Expr },
-    Var { ident: Token, expression: Expr },
-    Block { statements: Vec<Stmt> },
-    If { condition: Expr, then_stmt: Box<Stmt>, else_stmt: Option<Box<Stmt>> },
-    While { condition: Expr, body: Box<Stmt> },
-    Function { ident: Token, params: Vec<Token>, body: Vec<Box<Stmt>> }
+    Expression  { expression: Expr },
+    Print       { expression: Expr },
+    Var         { ident: Token, expression: Expr },
+    Block       { statements: Vec<Stmt> },
+    If          { condition: Expr, then_stmt: Box<Stmt>, else_stmt: Option<Box<Stmt>> },
+    While       { condition: Expr, body: Box<Stmt> },
+    Function    { ident: Token, params: Vec<Token>, body: Vec<Box<Stmt>> },
+    Return      { keyword: Token, value: Option<Expr> },
 }
 
 impl Stmt {
@@ -40,11 +41,21 @@ impl Stmt {
     pub fn new_function(ident: Token, params: Vec<Token>, body: Vec<Box<Stmt>>) -> Self {
         Self::Function { ident, params, body }
     }
+
+    pub fn new_return(keyword: Token, value: Option<Expr>) -> Self {
+        Self::Return {  keyword, value }
+    }
 }
 
 impl std::fmt::Display for Stmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Stmt::Return { keyword: _, value } => {
+                if let Some(value) = value {
+                    return write!(f, "(:return {})", value)
+                }
+                write!(f, "(:return)")
+            }
             Stmt::Function { ident, params, body } => {
                 let mut params_fmtd = String::new();
                 let body_fmtd = format!("{}", Stmt::new_block( body.iter().map(|b| *b.clone()).collect() ));
@@ -88,7 +99,7 @@ impl std::fmt::Display for Stmt {
                 if let Some(else_st) = else_stmt {
                     disp_out.push_str(format!(" :else {}", *else_st).as_str());
                 } 
-                disp_out.push_str(":fi)");
+                disp_out.push_str(" :fi)");
 
                 write!(f, "{}", disp_out)
             }

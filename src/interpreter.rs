@@ -1,4 +1,4 @@
-use crate::{enviroment::Enviroment, literal_value::LitVal, loc_error::LocErr, statement::Stmt, token::{Token, TokenKind}};
+use crate::{enviroment::Enviroment, literal_value::LitVal, loc_error::LocErr, location::Location, statement::Stmt, token::TokenKind};
 use std::{cell::RefCell, rc::Rc};
 
 pub struct Interpreter {
@@ -6,6 +6,11 @@ pub struct Interpreter {
 }
 
 // example function
+
+pub struct InterpReturn {
+    pub location: Location,
+    pub value: LitVal,
+}
 
 impl Interpreter {
     pub fn new() -> Self {
@@ -33,22 +38,40 @@ impl Interpreter {
         }
     }
 
-    pub fn interpret(&mut self, stmts: Vec<Stmt>) {
+
+    /// result < ok, err > 
+    /// Ok(())          ... Successful interpreting of anything other than return
+    /// Err(value)      ... Returning return stmt's value as an error
+    pub fn interpret(&mut self, stmts: Vec<Stmt>) -> Result<(), InterpReturn> {
         fn print_err(err: &LocErr) {
             println!("[ERROR][interp] {} {}", err.loc, err.msg);
         }
 
         for stmt in stmts {
             match stmt {
+                Stmt::Return { keyword, value } => {
+                    let evald_value = match value {
+                        Some(val) => match val.evaluate(self.enviroment.clone()) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                print_err(&e);
+                                LitVal::Nil
+                            }
+                        }
+                        None => LitVal::Nil,
+                    };
+                    
+                    // This need to be cathed by the function it was called from
+                    return Err(InterpReturn { location: keyword.loc().clone(), value: evald_value }) 
+                }
                 Stmt::Function { ident, params, body } => {
                     let function_identifer = match ident.kind() {
                         TokenKind::Identifier(value) => value,
                         _ => unreachable!("{} Can't use {:?} as a function identifier.", ident.loc(), ident.kind())
                     };
                     
-                    // deep copy of params and body
-                    let parameters: Vec<Token> = params.iter().map(|p| p.clone()).collect();
-                    let statements: Vec<Box<Stmt>> = body.iter().map(|b| b.clone()).collect(); 
+                    // get the length beforehand, because the params are moved to the closure
+                    let params_len = params.len();
 
                     // define the closure
                     let func_impl = move |parent_env: Rc<RefCell<Enviroment>>, args: Vec<LitVal>| -> LitVal {
@@ -63,7 +86,10 @@ impl Interpreter {
                         }
                         
                         for i in 0..body.len() {
-                            closure_interp.interpret(vec![*statements[i].clone()]);
+                            match closure_interp.interpret(vec![*body[i].clone()]) {
+                                Ok(_) => {},
+                                Err(ret) => return ret.value
+                            }
                         }
 
                         return LitVal::Nil
@@ -71,7 +97,7 @@ impl Interpreter {
 
                     let function_declaration = LitVal::Callable { 
                        ident: function_identifer.clone(), 
-                       arity: parameters.len(), 
+                       arity: params_len, 
                        func: Rc::new(func_impl),
                     };
 
@@ -106,9 +132,9 @@ impl Interpreter {
                             continue;
                         }
                     };
-                    
+
                     while cond.is_truthy() == LitVal::Bool(true) {
-                        self.interpret(body.clone());
+                        self.interpret(body.clone())?;
                         
                         cond = match condition.evaluate(self.enviroment.clone()) {
                             Ok(value) => value,
@@ -126,9 +152,9 @@ impl Interpreter {
                     match cond_expr {
                         Ok(cond) => {
                             if matches!(cond.is_truthy(), LitVal::Bool(true)) {
-                                self.interpret(vec![*then_stmt])
+                                self.interpret(vec![*then_stmt])?;
                             } else if let Some(else_stmt) = else_stmt {
-                                self.interpret(vec![*else_stmt])
+                                self.interpret(vec![*else_stmt])?;
                             }
                         }
                         Err(err) => {
@@ -139,11 +165,11 @@ impl Interpreter {
                 }
                 Stmt::Block { statements } => {
                     let enclosing_env = self.enviroment.clone();
-                    let block_env = Enviroment::new_local(self.enviroment.clone());
+                    let block_env = Enviroment::new_local(self.enviroment.clone());                    
                     
                     self.enviroment = Rc::new(RefCell::new(block_env));
 
-                    self.interpret(statements);
+                    self.interpret(statements)?;
                     
                     self.enviroment = enclosing_env;
                 }
@@ -170,15 +196,7 @@ impl Interpreter {
             }
         }
 
-        /* 
-        TODO: Probably should print the errors as they come in the REPL mode.
-        TODO: Only in compilation mode is it a good idea to first collect the error messages.
-        TODO: It is never a good idea.
-        for e in errs {
-            println!("[ERROR][interp] {} {}", e.loc, e.msg);
-        }
-        */ 
-        
+        Ok(())
     }
 
 }

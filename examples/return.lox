@@ -1,0 +1,54 @@
+fun nested_return(a, b) {
+    if (a > b) {
+        print "doing a + b";
+        {
+            return a + b;
+        }
+    }
+    
+    {
+        {
+            {
+                {
+                    return 99;
+                }
+            }
+        }
+    }
+
+    return a * b;
+}
+
+print "nested_return";
+print nested_return(4, 5);
+print nested_return(6, 5);
+
+
+// recursive fibonacci, very expensive
+fun fib(n) {
+    if (n <= 1) return n;
+    return fib(n - 2) + fib(n - 1);
+}
+
+// iterative fibonacci, very fast
+fun fib_nonrecursive(n) {
+    var a = 0;
+    var temp;
+    var b = 1;
+    for (var i = 0; i < n; i = i + 1) {
+        print a;
+        temp = a;
+        a = b;
+        b = b + temp;
+    }
+}
+
+// for (var i = 0; i < 200; i = i + 1) {
+//     print "fibonacci";
+//     print i;
+//     print fib(i);
+// }
+
+fib_nonrecursive(200);
+
+return;

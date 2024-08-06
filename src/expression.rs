@@ -49,7 +49,7 @@ impl Expr {
     pub fn evaluate(&self, env: Rc<RefCell<Enviroment>>) -> Result<LitVal, LocErr> {
     	match self {
 			Expr::Call { callee, arguments, right_paren } => {
-				println!("Calling: {}", self);
+				// println!("Calling: {}", self);
 				let callable = callee.evaluate(env.clone())?;
 
 				match &callable {
@@ -65,7 +65,7 @@ impl Expr {
 						}  
 						Ok(func(env, evaled_args))
 					}
-					any => Err(LocErr::new(right_paren.loc(), format!("Trying to call {} of value {}, which is not callable.", callee, any)))
+					any => Err(LocErr::new(right_paren.loc(), format!("Trying to call `{}` of value {}, which is not callable.", callee, any)))
 				}
 			}
     	    Expr::Literal { value } => Ok(value.clone()),
@@ -85,7 +85,7 @@ impl Expr {
                     let v = value.evaluate(env.clone())?;
                     return match env.as_ref().borrow_mut().assign(i, v.clone()) {
                         Some(_) => Ok(v),
-                        None => Err(LocErr::new(target.loc(), format!("Can't assign {} to an undeclared target {}.", v, i)))
+                        None => Err(LocErr::new(target.loc(), format!("Can't assign {} to an undeclared target `{}`.", v, i)))
                     }
                 }
                 unreachable!("{} Target must be an identifier", target.loc());
@@ -94,7 +94,7 @@ impl Expr {
 				if let TokenKind::Identifier(i) = ident.kind() {
 					match env.as_ref().borrow().get(i) {
 						Some(value) => return Ok(value.clone()),
-						None => return Err(LocErr::new(ident.loc(), format!("Variable {} is undeclared.", i)))
+						None => return Err(LocErr::new(ident.loc(), format!("Variable with identifier `{}` is undeclared.", i)))
 					}
 				}
 				unreachable!("{} Totally fucked up. {:?} is not an identifier.", ident.loc(), ident.kind());

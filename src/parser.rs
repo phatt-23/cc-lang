@@ -180,8 +180,23 @@ impl Parser {
             TokenKind::If => self.if_statement(),
             TokenKind::While => self.while_statement(),
             TokenKind::For => self.for_statement(),
+            TokenKind::Return => self.return_statement(),
 	        _ => self.expression_statement(),
 	    }
+    }
+
+    fn return_statement(&mut self) -> Result<Stmt, LocErr> {
+        let keyword = self.advance().clone();
+        
+
+        let value = match self.peek().kind() {
+            TokenKind::Semicolon => None,
+            _ => Some(self.expression()?)
+        };
+
+        self.consume(TokenKind::Semicolon, "Expected a semicolon `;` after return statement.".to_string())?;
+
+        Ok(Stmt::new_return(keyword, value))
     }
 
     fn for_statement(&mut self) -> Result<Stmt, LocErr> {
