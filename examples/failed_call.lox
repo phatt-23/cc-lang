@@ -1,0 +1,19 @@
+fun f(a, b) {
+    print "-- 1 --";
+    print a;
+    
+    print "-- 2 --";
+    print b;
+
+    print "-- 3 --";
+    var ret = a * b;
+    
+    print "-- 4 --";
+    print ret;
+
+    print "-- 5 --";
+    return ret;
+}
+
+f(2, 3);
+f("hello", 3);

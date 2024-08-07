@@ -44,18 +44,17 @@ fn run(interpreter: &mut Interpreter, filepath: String, source: String) {
     let mut parser = Parser::new();
 
     let tokens = lexer.lex(filepath, source);
+
     let stmts = parser.parse(tokens);
 
-    for s in &stmts {
-        println!("{}", s);
-    }
-
     let interp_result = interpreter.interpret(stmts);
+
     match interp_result {
-        Ok(_) => {}
-        Err(ret) => {
-            println!("[ERROR][interp-global] {} Called `return` at global level with value {}.", ret.location, ret.value);
+        Ok(opt_ret) => match opt_ret {
+            Some(ret) => println!("[ERROR][interpreter] {} Called `return` at global level with value {}.", ret.location, ret.value),
+            None => {}
         }
+        Err(err) => println!("[ERROR][interpreter][{}] {}", err.loc, err.msg)
     }
 
 }

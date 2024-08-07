@@ -13,12 +13,14 @@ add(1, 2);
 
 print global;
 
-print a;
-print b;
+// print a;
+// pint = "je";
 
 {
     print global;
 }
+
+// var gg = "ahoj" * 23;
 
 {
     add(4, 9);
@@ -32,7 +34,8 @@ print b;
             {
                 add(9, 10);
             }
-
+            
+            print "should give an error";
             mul ("hello", 10);
 
             mul(8, 7);

@@ -34,14 +34,14 @@ impl Lexer {
 
         tokens.push(Token::create(TokenKind::Eof, self.create_loc()));
         
+        // for t in &tokens {
+        //     println!("[INFO][lexer][{}] {:?}", t.loc(), t.kind());
+        // }
+        
         for e in &self.err_reports {
             println!("[ERROR][lexer] {} {}", e.0, e.1);
         }
 
-        // for t in &tokens {
-        //     println!("[INFO][lexer] {}", t);
-        // }
-        
         tokens
     }
 

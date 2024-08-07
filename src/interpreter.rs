@@ -6,7 +6,7 @@ pub struct Interpreter {
 }
 
 // example function
-
+#[derive(Debug)]
 pub struct InterpReturn {
     pub location: Location,
     pub value: LitVal,
@@ -19,9 +19,9 @@ impl Interpreter {
         let f = LitVal::Callable { 
             ident: String::from("clock"), 
             arity: 0, 
-            func: Rc::new(|_| -> LitVal {
+            func: Rc::new(|_| {
                 let time = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs();
-                LitVal::Int(time as i32)
+                Ok(LitVal::Int(time as i32))
             })
         };
 
@@ -41,9 +41,9 @@ impl Interpreter {
     /// result < ok, err > 
     /// Ok(())          ... Successful interpreting of anything other than return
     /// Err(value)      ... Returning return stmt's value as an error
-    pub fn interpret(&mut self, stmts: Vec<Stmt>) -> Result<(), InterpReturn> {
+    pub fn interpret(&mut self, stmts: Vec<Stmt>) -> Result<Option<InterpReturn>, LocErr> {
         fn print_err(err: &LocErr) {
-            println!("[ERROR][interp] {} {}", err.loc, err.msg);
+            println!("[ERROR][interp][{}] {}", err.loc, err.msg);
         }
 
         for stmt in stmts {
@@ -53,15 +53,15 @@ impl Interpreter {
                         Some(val) => match val.evaluate(self.enviroment.clone()) {
                             Ok(v) => v,
                             Err(e) => {
-                                print_err(&e);
-                                LitVal::Nil
+                                // print_err(&e);
+                                return Err(e)
                             }
                         }
                         None => LitVal::Nil,
                     };
                     
                     // This need to be cathed by the function it was called from
-                    return Err(InterpReturn { location: keyword.loc().clone(), value: evald_value }) 
+                    return Ok(Some(InterpReturn { location: keyword.loc().clone(), value: evald_value })) 
                 }
                 Stmt::Function { ident, params, body } => {
                     let function_identifer = match ident.kind() {
@@ -74,25 +74,30 @@ impl Interpreter {
 
                     let parent_env = self.enviroment.clone();
                     // define the closure
-                    let func_impl = move |args: Vec<LitVal>| -> LitVal {
-                        let mut closure_interp = Interpreter::for_closure(parent_env.clone());
+                    let func_impl = move |args: Vec<LitVal>| -> Result<LitVal, LocErr> {
+                        let mut function_interp = Interpreter::for_closure(parent_env.clone());
 
                         for (index, arg) in args.iter().enumerate() {
                             let param_ident = match params[index].kind() {
                                 TokenKind::Identifier(ident) => ident.clone(),
                                 _ => unreachable!("Parameter in the `params` vector should be Identifier.")
                             };
-                            closure_interp.enviroment.borrow_mut().define(param_ident, arg.clone());
+                            function_interp.enviroment.borrow_mut().define(param_ident, arg.clone());
                         }
                         
                         for i in 0..body.len() {
-                            match closure_interp.interpret(vec![body[i].clone()]) {
-                                Ok(_) => {},
-                                Err(ret) => return ret.value
+                            let interp_result = function_interp.interpret(vec![body[i].clone()]);
+
+                            match interp_result {
+                                Ok(opt_ret) => match opt_ret {
+                                    Some(ret) => return Ok(ret.value),
+                                    None => {}, // Do nothing
+                                }
+                                Err(err) => return Err(err)
                             }
                         }
 
-                        return LitVal::Nil
+                        return Ok(LitVal::Nil)
                     };
 
                     let function_declaration = LitVal::Callable { 
@@ -112,8 +117,9 @@ impl Interpreter {
                     let value = match expression.evaluate(self.enviroment.clone()) {
                         Ok(val) => val,
                         Err(err) => {
-                            print_err(&err);
-                            continue;
+                            // print_err(&err);
+                            // continue;
+                            return Err(err);
                         }
                     };
                     
@@ -128,8 +134,9 @@ impl Interpreter {
                     let mut cond = match condition.evaluate(self.enviroment.clone()) {
                         Ok(value) => value,
                         Err(err) => {
-                            print_err(&err);
-                            continue;
+                            // print_err(&err);
+                            // continue;
+                            return Err(err);
                         }
                     };
 
@@ -139,8 +146,8 @@ impl Interpreter {
                         cond = match condition.evaluate(self.enviroment.clone()) {
                             Ok(value) => value,
                             Err(err) => {
-                                print_err(&err);
-                                continue;
+                                // print_err(&err);
+                                return Err(err);
                             }
                         }
                     }
@@ -158,8 +165,9 @@ impl Interpreter {
                             }
                         }
                         Err(err) => {
-                            print_err(&err);
-                            continue;
+                            // print_err(&err);
+                            // continue;
+                            return Err(err);
                         }
                     }
                 }
@@ -179,7 +187,9 @@ impl Interpreter {
                     match expr {
                         Ok(_) => {}
                         Err(err) => {
-                            print_err(&err);
+                            // print_err(&err);
+                            // continue;
+                            return Err(err);
                         }
                     }
                 }
@@ -189,14 +199,16 @@ impl Interpreter {
                     match expr {
                         Ok(val) => println!("{}", val),
                         Err(err) => {
-                            print_err(&err);
+                            // print_err(&err);
+                            // continue;
+                            return Err(err);
                         }
                     }
                 }
             }
         }
 
-        Ok(())
+        Ok(None)
     }
 
 }

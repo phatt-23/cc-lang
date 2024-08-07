@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+use crate::loc_error::LocErr;
+
 #[derive(Clone)]
 pub enum LitVal { 
 	Int(i32), 
@@ -10,7 +12,7 @@ pub enum LitVal {
 	Callable { 
 		ident: String, 
 		arity: usize,
-		func: Rc<dyn Fn(Vec<LitVal>) -> LitVal>
+		func: Rc<dyn Fn(Vec<LitVal>) -> Result<LitVal, LocErr>>
 	},
 }
 

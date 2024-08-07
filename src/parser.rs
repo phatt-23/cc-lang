@@ -6,43 +6,31 @@ use crate::loc_error::LocErr;
 
 pub struct Parser {
     tokens: Vec<Token>,
-    current: i32,
 }
 
 impl Parser {
     pub fn new() -> Self {
-        Self {
-            tokens: Vec::new(),
-            current: 0,
-        }
+        Self { tokens: Vec::new() }
     }
     
     // helpers --------------------------------------
     fn is_at_end(&self) -> bool {
-        self.current as usize >= self.tokens.len() || matches!(self.peek().kind(), TokenKind::Eof) 
+        self.tokens.len() <= 0 || matches!(self.peek().kind(), TokenKind::Eof)
     }
     
     fn peek(&self) -> &Token {
-        self.tokens.get(self.current as usize).unwrap()
+        self.tokens.last().unwrap()
     }
 
-    fn previous(&self) -> Result<&Token, LocErr> {
-        if self.is_at_end() || (self.current - 1) as usize >= self.tokens.len() {
-            Err(LocErr {loc: self.peek().loc().clone(), msg: format!("Couldn't read previous token of {:?}!", self.peek().kind())})
-        } else {
-            Ok(self.tokens.get((self.current - 1) as usize).unwrap())
-        }
-    }
-
-    fn advance(&mut self) -> &Token {
-        let t = self.tokens.get(self.current as usize).unwrap();
+    fn advance(&mut self) -> Token {
         if !self.is_at_end() {
-            self.current += 1;
+            return self.tokens.pop().unwrap()
+        } else {
+            panic!("Trying to pop/advance with no tokens left")
         }
-        t
     }
 
-    fn consume(&mut self, tok_kind: TokenKind, msg: String) -> Result<&Token, LocErr> { 
+    fn consume(&mut self, tok_kind: TokenKind, msg: String) -> Result<Token, LocErr> { 
         if *self.peek().kind() == tok_kind {
             Ok(self.advance())
         } else {
@@ -50,8 +38,7 @@ impl Parser {
         }
     }
     
-    /* Same as consume() but doesnt advance the counter
-    */
+    /* Same as consume() but doesnt advance, only checks */
     fn check(&mut self, tok_kind: TokenKind, msg: String) -> Result<&Token, LocErr> { 
         if *self.peek().kind() == tok_kind {
             Ok(self.peek())
@@ -62,12 +49,13 @@ impl Parser {
 
     fn synchronize(&mut self) {
         use TokenKind::*;
-        self.advance();
+        let mut previous = self.advance();
         while !self.is_at_end() {
-            if matches!(self.previous().unwrap().kind(), Semicolon) || matches!(self.peek().kind(), Fun | Class | Var | For | If | While | Print | Return) {
+            if matches!(previous.kind(), Semicolon) 
+            || matches!(self.peek().kind(), Fun | Class | Var | For | If | While | Print | Return) {
                 return;
             }
-            self.advance();
+            previous = self.advance();
         }
     }
 
@@ -75,24 +63,28 @@ impl Parser {
 
 impl Parser {
     pub fn parse(&mut self, tokens: Vec<Token>) -> Vec<Stmt> {
-	    self.tokens = tokens;
+        self.tokens = tokens;
+        self.tokens.reverse();
 
 	    let mut stmts: Vec<Stmt> = Vec::new();
 	    let mut errs: Vec<LocErr> = Vec::new();
 
 	    while !self.is_at_end() {
-	        let stmt = self.declaration();
-            match stmt {
+            match self.declaration() {
     	    	Ok(s) => stmts.push(s),
     	    	Err(err) => {
-    	    	    errs.push(err);
+                    errs.push(err);
     	    	    self.synchronize();
 	            }
 	        }
 	    }
 
+        // for (i, s) in stmts.iter().enumerate() {
+        //     println!("[INFO][parser][stmt {}] {}", i, s);
+        // }
+
         for e in errs {
-            println!("[ERROR][parser] {} {}", e.loc, e.msg);
+            println!("[ERROR][parser][{}] {}", e.loc, e.msg);
         }
 
 	    stmts
@@ -334,13 +326,12 @@ impl Parser {
         let expr = self.lambda_expression()?;
         
         if matches!(self.peek().kind(), TokenKind::Equal) {
-            self.advance();
+            let equal = self.advance();
             let value = self.assignment_expression()?;
             if let Expr::Var {ident} = expr {
                 return Ok(Expr::new_assign(ident, value))
             }
-            let loc = self.previous()?.loc().clone();
-            return Err(LocErr {loc, msg: format!("Invalid assignment target {}.", expr)})
+            return Err(LocErr::new(equal.loc(), format!("Invalid assignment target {}.", expr)))
         }
         
         Ok(expr)
@@ -415,8 +406,7 @@ impl Parser {
         let mut expr = self.comparison_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), BangEqual | EqualEqual) {
-            self.advance();
-            let op = self.previous()?.clone();
+            let op = self.advance();
             let right = self.comparison_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
@@ -427,8 +417,7 @@ impl Parser {
         let mut expr = self.term_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), Greater | GreaterEqual | Less | LessEqual) {
-            self.advance();
-            let op = self.previous()?.clone();
+            let op = self.advance();
             let right = self.term_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
@@ -439,8 +428,7 @@ impl Parser {
         let mut expr = self.factor_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), Minus | Plus) {
-            self.advance();
-            let op = self.previous()?.clone();
+            let op = self.advance();
             let right = self.factor_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
@@ -451,8 +439,7 @@ impl Parser {
         let mut expr = self.unary_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), Star | Slash) {
-            self.advance();
-            let op = self.previous()?.clone();
+            let op = self.advance();
             let right = self.unary_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
@@ -462,8 +449,7 @@ impl Parser {
     fn unary_expression(&mut self) -> Result<Expr, LocErr> {
         use TokenKind::*;
         if matches!(self.peek().kind(), Bang | Minus) {
-            self.advance();
-            let op = self.previous()?.clone();
+            let op = self.advance();
             let expr = self.unary_expression()?;
             return Ok(Expr::new_unary(op, expr))
         }
@@ -555,13 +541,10 @@ impl Parser {
             }
             _ => {
                 if matches!(self.peek().kind(), TokenKind::Eof) {
-                    return Err(LocErr {loc: self.peek().loc().clone(), msg: "Expected expression but found nothing (EOF).".to_string()});
+                    return Err(LocErr::new(self.peek().loc(), "Expected an expression but found nothing (EOF).".to_string()))
                 }  
 
-                match self.previous() {
-                    Ok(p) => Err(LocErr {loc: self.peek().loc().clone(), msg: format!("Expected Expression after {:?}, but found {:?}!", p.kind(), self.peek().kind())}),
-                    Err(m) => Err(LocErr {loc: self.peek().loc().clone(), msg: format!("Unexpected usage of {:?}, -- {} {}", self.peek().kind(), m.loc, m.msg)})
-                }
+                Err(LocErr::new(self.peek().loc(), format!("Expected an expression, but found {:?}!", self.peek().kind())))
             }
         }
     }

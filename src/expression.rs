@@ -61,7 +61,7 @@ impl Expr {
 				let params = params.clone();
 				let body = body.clone();
 				// define the lambda
-				let lambda_impl = move |args: Vec<LitVal>| -> LitVal {
+				let lambda_impl = move |args: Vec<LitVal>| -> Result<LitVal, LocErr> {
 					let mut lambda_interp = Interpreter::for_closure(env.clone());
 
 					for (index, arg) in args.iter().enumerate() {
@@ -74,12 +74,15 @@ impl Expr {
 					
 					for i in 0..body.len() {
 						match lambda_interp.interpret(vec![body[i].clone()]) {
-							Ok(_) => {},
-							Err(ret) => return ret.value
+							Ok(opt_ret) => match opt_ret {
+								Some(ret) => return Ok(ret.value),
+								None => return Ok(LitVal::Nil),
+							}
+							Err(err) => return Err(err)
 						}
 					}
 
-					return LitVal::Nil
+					return Ok(LitVal::Nil)
 				};
 
 				Ok(LitVal::Callable { 
@@ -103,7 +106,17 @@ impl Expr {
 							let evaled_arg = arg.evaluate(env.clone())?;
 							evaled_args.push(evaled_arg);
 						}  
-						Ok(func(evaled_args))
+
+						let call_result = func(evaled_args);
+						match call_result {
+							Ok(ok) => Ok(ok),
+							Err(err) => {
+								let fmtd_args: Vec<_> = arguments.iter().map(|arg| format!("{}", arg)).collect();
+								let fmtd_args = fmtd_args.join(", ");
+								
+								Err(LocErr::new(right_paren.loc(), format!("Failed execution of callable `{}` with ({}) as passed arguments.\n  [ERROR-from-callable][{}] {}", &ident, fmtd_args, err.loc, err.msg)))
+							}
+						}
 					}
 					any => Err(LocErr::new(right_paren.loc(), format!("Trying to call `{}` of value {}, which is not callable.", callee, any)))
 				}
@@ -188,7 +201,9 @@ impl Expr {
             			    (Int(x), Int(y)) => Ok(Int(x * y)),
             			    (Double(x), Int(y)) => Ok(Double(x * f64::from(y))),
             			    (Int(x), Double(y)) => Ok(Double(f64::from(x) * y)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", operator.kind(), l, r)))
+            			    (l, r) => {
+								Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", operator.kind(), l, r)))
+							}
             			}
         		    }
         		    TokenKind::Slash => {
