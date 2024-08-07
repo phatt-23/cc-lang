@@ -9,7 +9,7 @@ pub enum Stmt {
     Block       { statements: Vec<Stmt> },
     If          { condition: Expr, then_stmt: Box<Stmt>, else_stmt: Option<Box<Stmt>> },
     While       { condition: Expr, body: Box<Stmt> },
-    Function    { ident: Token, params: Vec<Token>, body: Vec<Box<Stmt>> },
+    Function    { ident: Token, params: Vec<Token>, body: Vec<Stmt> },
     Return      { keyword: Token, value: Option<Expr> },
 }
 
@@ -38,7 +38,7 @@ impl Stmt {
         Self::While { condition, body }
     }
 
-    pub fn new_function(ident: Token, params: Vec<Token>, body: Vec<Box<Stmt>>) -> Self {
+    pub fn new_function(ident: Token, params: Vec<Token>, body: Vec<Stmt>) -> Self {
         Self::Function { ident, params, body }
     }
 
@@ -58,7 +58,7 @@ impl std::fmt::Display for Stmt {
             }
             Stmt::Function { ident, params, body } => {
                 let mut params_fmtd = String::new();
-                let body_fmtd = format!("{}", Stmt::new_block( body.iter().map(|b| *b.clone()).collect() ));
+                let body_fmtd = format!("{}", Stmt::new_block( body.iter().map(|b| b.clone()).collect() ));
 
                 // TODO: Reformat into more functional code
                 for (index, param) in params.iter().enumerate() {

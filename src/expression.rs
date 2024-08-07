@@ -1,6 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
-
-use crate::{enviroment::Enviroment, literal_value::LitVal, loc_error::LocErr, token::{Token, TokenKind}};
+use crate::{enviroment::Environment, interpreter::Interpreter, literal_value::LitVal, loc_error::LocErr, statement::Stmt, token::{Token, TokenKind}};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
@@ -12,6 +11,7 @@ pub enum Expr {
     Assign   { target: Token, value: Box<Expr> },
     Logical  { operator: Token, left: Box<Expr>, right: Box<Expr> },
 	Call     { callee: Box<Expr>, arguments: Vec<Expr>, right_paren: Token },
+	Lambda   { params: Vec<Token>, body: Vec<Stmt>, right_paren: Token }
 }
 
 impl Expr {
@@ -43,11 +43,51 @@ impl Expr {
 	pub fn new_call(callee: Box<Expr>, arguments: Vec<Expr>, right_paren: Token) -> Self{
 		Self::Call { callee, arguments, right_paren }
 	}
+
+	pub fn new_lambda(params: Vec<Token>, body: Vec<Stmt>, right_paren: Token) -> Self {
+		Self::Lambda { params, body, right_paren } 
+	}
 }
 
 impl Expr {
-    pub fn evaluate(&self, env: Rc<RefCell<Enviroment>>) -> Result<LitVal, LocErr> {
+    pub fn evaluate(&self, env: Rc<RefCell<Environment>>) -> Result<LitVal, LocErr> {
     	match self {
+			Expr::Lambda { params, body, right_paren: _ } => {
+				println!("process lambda: {}", self);
+				let lambda_indentifier = format!("Lambda_{:x}", rand::random::<usize>());
+				let lambda_arity = params.len();
+				
+				// clone them to this scope for the closure to capture
+				let params = params.clone();
+				let body = body.clone();
+				// define the lambda
+				let lambda_impl = move |args: Vec<LitVal>| -> LitVal {
+					let mut lambda_interp = Interpreter::for_closure(env.clone());
+
+					for (index, arg) in args.iter().enumerate() {
+						let param_ident = match params[index].kind() {
+							TokenKind::Identifier(ident) => ident.clone(),
+							_ => unreachable!("Parameter in the `params` vector should be Identifier.")
+						};
+						lambda_interp.enviroment.borrow_mut().define(param_ident, arg.clone());
+					}
+					
+					for i in 0..body.len() {
+						match lambda_interp.interpret(vec![body[i].clone()]) {
+							Ok(_) => {},
+							Err(ret) => return ret.value
+						}
+					}
+
+					return LitVal::Nil
+				};
+
+				Ok(LitVal::Callable { 
+					ident: lambda_indentifier, 
+					arity: lambda_arity, 
+					func: Rc::new(lambda_impl)
+				})
+			}
 			Expr::Call { callee, arguments, right_paren } => {
 				// println!("Calling: {}", self);
 				let callable = callee.evaluate(env.clone())?;
@@ -63,7 +103,7 @@ impl Expr {
 							let evaled_arg = arg.evaluate(env.clone())?;
 							evaled_args.push(evaled_arg);
 						}  
-						Ok(func(env, evaled_args))
+						Ok(func(evaled_args))
 					}
 					any => Err(LocErr::new(right_paren.loc(), format!("Trying to call `{}` of value {}, which is not callable.", callee, any)))
 				}
@@ -251,33 +291,31 @@ impl LitVal {
     }
 }
 
-impl std::fmt::Display for LitVal {
-    // fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    // 	match self {
-    //         LitVal::Int(v)    => write!(f, "int({})", v),
-    //         LitVal::Double(v) => write!(f, "double({})", v),
-    //         LitVal::String(v) => write!(f, "string(\"{}\")", v),
-    //         LitVal::Bool(v)   => write!(f, "bool({})", if *v {"true"} else {"false"}),
-    //         LitVal::Nil       => write!(f, "nil"),
-    //     }
-    // }
-
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			LitVal::Int(v)    => write!(f, "{}", v),
-			LitVal::Double(v) => write!(f, "{}", v),
-			LitVal::String(v) => write!(f, "\"{}\"", v),
-			LitVal::Bool(v)   => write!(f, "{}", v),
-			LitVal::Nil       => write!(f, "nil"),
-			LitVal::Callable { ident, arity, func: _ } => write!(f, "{}/{}", ident, arity),
-        }
-    }
-}
-
-
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+			Self::Lambda { params, body, right_paren: _} => {
+				let formatted_params: Vec<String> = 
+					params
+						.iter()
+						.map(|param| format!("{}", param.kind()))
+						.collect();
+
+				let formatted_body: Vec<String> = 
+					body
+						.iter()
+						.map(|b| format!("{}", b))
+						.collect();
+				
+				let mut fmtd_string = format!("(:lambda ({}) ", formatted_params.join(" "));
+				if body.len() == 1 {
+					fmtd_string.push_str(format!("{})", formatted_body.join(" ")).as_str());
+				} else {
+					fmtd_string.push_str(format!("({}))", formatted_body.join(" ")).as_str());
+				}
+				
+				write!(f, "{}", fmtd_string)				
+			}
 			Self::Call { callee, arguments, right_paren: _ } => {
 				let formatted_args: Vec<String> = 
 					arguments

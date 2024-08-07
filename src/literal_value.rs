@@ -1,6 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
-use crate::enviroment::Enviroment;
-
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub enum LitVal { 
@@ -12,7 +10,7 @@ pub enum LitVal {
 	Callable { 
 		ident: String, 
 		arity: usize,
-		func: Rc<dyn Fn(Rc<RefCell<Enviroment>>, Vec<LitVal>) -> LitVal>
+		func: Rc<dyn Fn(Vec<LitVal>) -> LitVal>
 	},
 }
 
@@ -29,24 +27,29 @@ impl std::fmt::Debug for LitVal {
     }
 }
 
+impl std::fmt::Display for LitVal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			LitVal::Int(v)    => write!(f, "{}", v),
+			LitVal::Double(v) => write!(f, "{}", v),
+			LitVal::String(v) => write!(f, "\"{}\"", v),
+			LitVal::Bool(v)   => write!(f, "{}", v),
+			LitVal::Nil       => write!(f, "nil"),
+			LitVal::Callable { ident, arity, func: _ } => write!(f, "{}/{}", ident, arity),
+        }
+    }
+}
+
 impl PartialEq for LitVal {
     fn eq(&self, other: &Self) -> bool {
-        // TODO: Can you compare two variants that are not of the same type? 
-        // TODO: Do you panic or just return false? Maybe we can compare 
-        // TODO: numbers (int, float) and bools and nils with each other.
-        match self {
-            Self::Int(val) => if let Self::Int(val_other) = other { val == val_other } else { panic!("Can't compare two LitVals that are not both of Int variant") }
-            Self::Double(val) => if let Self::Double(val_other) = other {val == val_other} else { panic!("Can't compare two LitVals that are not both of Double variant") }
-            Self::String(val) => if let Self::String(val_other) = other {val == val_other} else { panic!("Can't compare two LitVals that are not both of String variant") }
-            Self::Bool(val) => if let Self::Bool(val_other) = other {val == val_other} else { panic!("Can't compare two LitVals that are not both of Bool variant") }
-            Self::Nil => matches!(other, Self::Nil),
-            Self::Callable { ident: i, arity: a, func: _ } => {
-                if let Self::Callable { ident: i_other, arity: a_other, func: _ } = other {
-                    return i == i_other && a == a_other
-                } else {
-                    false
-                }
-            }
+        match (self, other) {
+            (Self::Int(v0), Self::Int(v1)) => v0 == v1,
+            (Self::Double(v0), Self::Double(v1)) => v0 == v1,
+            (Self::String(v0), Self::String(v1)) => v0 == v1,
+            (Self::Bool(v0), Self::Bool(v1)) => v0 == v1,
+            (Self::Nil, Self::Nil) => true,
+            (Self::Callable { ident: i0, arity: a0, func: _ }, Self::Callable { ident: i1, arity: a1, func: _ }) => i0 == i1 && a0 == a1,
+            (any0, any1) => panic!("Can't compare values of different types. Tried to compare {} with {}", any0, any1)
         }
     }
 }

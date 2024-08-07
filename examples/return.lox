@@ -31,24 +31,26 @@ fun fib(n) {
 }
 
 // iterative fibonacci, very fast
-fun fib_nonrecursive(n) {
+fun fib_iter(n) {
     var a = 0;
     var temp;
     var b = 1;
     for (var i = 0; i < n; i = i + 1) {
-        print a;
         temp = a;
         a = b;
         b = b + temp;
     }
+    return a;
 }
 
-// for (var i = 0; i < 200; i = i + 1) {
-//     print "fibonacci";
-//     print i;
-//     print fib(i);
-// }
+print "fibonacci recursive";
+for (var i = 0; i < 20; i = i + 1) {
+    print fib(i);
+}
 
-fib_nonrecursive(200);
+print "fibonacci iterative";
+for (var i = 0; i < 20; i = i + 1) {
+    print fib_iter(i);
+}
 
 return;

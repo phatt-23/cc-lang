@@ -142,8 +142,8 @@ impl Parser {
         self.check(TokenKind::LeftBrace, "Expected a left brace '{' denoting function body.".to_string())?;
 
         let body = match self.block_statement()? {
-            Stmt::Block { statements } => statements.iter().map(|s| Box::from(s.clone())).collect(),
-            _ => unreachable!("It must a block, it starts with '{{'")
+            Stmt::Block { statements } => statements,
+            _ => unreachable!("It must be a block, it starts with '{{'")
         };
 
         Ok(Stmt::new_function(ident, params, body))
@@ -307,133 +307,177 @@ impl Parser {
             stmts.push(stmt);
         }
 
-        self.consume(TokenKind::RightBrace, format!("{} Expected a right brace '}}' denoting end of a block statement.", self.peek().loc()))?;
+        self.consume(TokenKind::RightBrace, "Expected a right brace '}' denoting end of a block statement.".to_string())?;
         Ok(Stmt::new_block(stmts))
     }
 
     fn print_statement(&mut self) -> Result<Stmt, LocErr> {
         self.advance();
         let expr = self.expression()?;
-        self.consume(TokenKind::Semicolon, format!("{} Expected a semicolon ';' after expression denoting end of statement.", self.peek().loc()))?;
+        self.consume(TokenKind::Semicolon, "Expected a semicolon ';' after expression denoting end of print statement.".to_string())?;
         Ok(Stmt::new_print(expr))
     }
 
     fn expression_statement(&mut self) -> Result<Stmt, LocErr> {
         let expr = self.expression()?;
-        self.consume(TokenKind::Semicolon, format!("{} Expected a semicolon ';' after expression denoting end of statement.", self.peek().loc()))?;
+        self.consume(TokenKind::Semicolon, "Expected a semicolon ';' after expression denoting end of expression statement.".to_string())?;
         Ok(Stmt::new_expr(expr))
     }
 
     //AST Syntax Expr -----------------------------------
     fn expression(&mut self) -> Result<Expr, LocErr> {
-        self.assignment()
+        self.assignment_expression()
     }
 
-    fn assignment(&mut self) -> Result<Expr, LocErr> {
-        let expr = self.logic_or()?;
-
+    
+    fn assignment_expression(&mut self) -> Result<Expr, LocErr> {
+        let expr = self.lambda_expression()?;
+        
         if matches!(self.peek().kind(), TokenKind::Equal) {
             self.advance();
-            let value = self.assignment()?;
+            let value = self.assignment_expression()?;
             if let Expr::Var {ident} = expr {
                 return Ok(Expr::new_assign(ident, value))
             }
             let loc = self.previous()?.loc().clone();
             return Err(LocErr {loc, msg: format!("Invalid assignment target {}.", expr)})
         }
-
+        
         Ok(expr)
     }
+    
+    fn lambda_expression(&mut self) -> Result<Expr, LocErr> {
+        // TODO: Maybe introduce a separate `lambda` keyword.
+        if matches!(self.peek().kind(), TokenKind::Fun) {
+            self.advance();
+            
+            self.consume(TokenKind::LeftParen, "Lambda expression expected left parenthesis '(' after `fun` keyword.".to_string())?;
 
-    fn logic_or(&mut self) -> Result<Expr, LocErr> {
-        let mut expr = self.logic_and()?;
+            let mut params = vec![];
+            // TODO: Refactor this block into a helper function `finish_params` or `extract_params` etc.
+            if !matches!(self.peek().kind(), TokenKind::RightParen) {
+                const MAX_PARAMS: usize = 0xFF;
+                loop {
+                    if params.len() >= MAX_PARAMS {
+                        return Err(LocErr::new(self.peek().loc(), format!("Exceeded the maximum number ({}) of parameters a lambda can have.", MAX_PARAMS)))
+                    }
+                    
+                    match self.peek().kind() {
+                        TokenKind::Identifier(_) => params.push(self.advance().clone()),
+                        _ => return Err(LocErr::new(self.peek().loc(), format!("Expected an identifier as a parameter, instead found {}.", self.peek().kind())))
+                    }
+    
+                    if *self.peek().kind() != TokenKind::Comma {
+                        break;
+                    }
+    
+                    self.advance();
+                }
+            }
+            let right_paren = self.consume(TokenKind::RightParen, "Expected right parenthesis ')' after list of parameters.".to_string())?.clone();
+    
+            self.check(TokenKind::LeftBrace, "Expected a left brace '{' denoting lambda body.".to_string())?;
+    
+            let body = match self.block_statement()? {
+                Stmt::Block { statements } => statements,
+                _ => unreachable!("It must be a block, it starts with '{{'")
+            };
+    
+            return Ok(Expr::new_lambda(params, body, right_paren))
+        }
+        
+        self.logic_or_expression()
+    }
+
+    fn logic_or_expression(&mut self) -> Result<Expr, LocErr> {
+        let mut expr = self.logic_and_expression()?;
         while matches!(self.peek().kind(), TokenKind::Or) {
             let op = self.advance().clone();
-            let right = self.logic_and()?;
+            let right = self.logic_and_expression()?;
             expr = Expr::new_logical(expr, op, right);
         }
 
         Ok(expr)
     }
 
-    fn logic_and(&mut self) -> Result<Expr, LocErr> {
-        let mut expr = self.equality()?;
+    fn logic_and_expression(&mut self) -> Result<Expr, LocErr> {
+        let mut expr = self.equality_expression()?;
         while matches!(self.peek().kind(), TokenKind::And) {
             let op = self.advance().clone();
-            let right = self.equality()?;
+            let right = self.equality_expression()?;
             expr = Expr::new_logical(expr, op, right);
         }
 
         Ok(expr)
     }
     
-    fn equality(&mut self) -> Result<Expr, LocErr> {
-        let mut expr = self.comparison()?;
+    fn equality_expression(&mut self) -> Result<Expr, LocErr> {
+        let mut expr = self.comparison_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), BangEqual | EqualEqual) {
             self.advance();
             let op = self.previous()?.clone();
-            let right = self.comparison()?;
+            let right = self.comparison_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
         Ok(expr)
     }
 
-    fn comparison(&mut self) -> Result<Expr, LocErr> {
-        let mut expr = self.term()?;
+    fn comparison_expression(&mut self) -> Result<Expr, LocErr> {
+        let mut expr = self.term_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), Greater | GreaterEqual | Less | LessEqual) {
             self.advance();
             let op = self.previous()?.clone();
-            let right = self.term()?;
+            let right = self.term_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
         Ok(expr)
     }
 
-    fn term(&mut self) -> Result<Expr, LocErr> {
-        let mut expr = self.factor()?;
+    fn term_expression(&mut self) -> Result<Expr, LocErr> {
+        let mut expr = self.factor_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), Minus | Plus) {
             self.advance();
             let op = self.previous()?.clone();
-            let right = self.factor()?;
+            let right = self.factor_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
         Ok(expr)
     }
 
-    fn factor(&mut self) -> Result<Expr, LocErr> {
-        let mut expr = self.unary()?;
+    fn factor_expression(&mut self) -> Result<Expr, LocErr> {
+        let mut expr = self.unary_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), Star | Slash) {
             self.advance();
             let op = self.previous()?.clone();
-            let right = self.unary()?;
+            let right = self.unary_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
         Ok(expr)
     }
 
-    fn unary(&mut self) -> Result<Expr, LocErr> {
+    fn unary_expression(&mut self) -> Result<Expr, LocErr> {
         use TokenKind::*;
         if matches!(self.peek().kind(), Bang | Minus) {
             self.advance();
             let op = self.previous()?.clone();
-            let expr = self.unary()?;
+            let expr = self.unary_expression()?;
             return Ok(Expr::new_unary(op, expr))
         }
-        self.call()
+        self.call_expression()
     }
 
-    fn call(&mut self) -> Result<Expr, LocErr> {
-        let mut expr = self.primary()?;
+    fn call_expression(&mut self) -> Result<Expr, LocErr> {
+        let mut expr = self.primary_expression()?;
 
         loop {
             match self.peek().kind() {
                 TokenKind::LeftParen => {
                     self.advance();
-                    expr = self.finish_call(expr)?;
+                    expr = self.finish_call_expression(expr)?;
                 }
                 _ => break,
             }
@@ -442,7 +486,8 @@ impl Parser {
         Ok(expr)
     }
 
-    fn finish_call(&mut self, callee: Expr) -> Result<Expr, LocErr> {
+    // helper
+    fn finish_call_expression(&mut self, callee: Expr) -> Result<Expr, LocErr> {
         const MAX_ARGS: usize = 255;
         
         let mut arguments: Vec<Expr> = vec![];
@@ -467,7 +512,7 @@ impl Parser {
         Ok(Expr::new_call(Box::from(callee), arguments, right_paren.clone()))
     }
 
-    fn primary(&mut self) -> Result<Expr, LocErr> {
+    fn primary_expression(&mut self) -> Result<Expr, LocErr> {
         match self.peek().kind() {
             TokenKind::False => {
                 self.advance();

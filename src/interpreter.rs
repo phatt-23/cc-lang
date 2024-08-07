@@ -1,8 +1,8 @@
-use crate::{enviroment::Enviroment, literal_value::LitVal, loc_error::LocErr, location::Location, statement::Stmt, token::TokenKind};
+use crate::{enviroment::Environment, literal_value::LitVal, loc_error::LocErr, location::Location, statement::Stmt, token::TokenKind};
 use std::{cell::RefCell, rc::Rc};
 
 pub struct Interpreter {
-    pub enviroment: Rc<RefCell<Enviroment>>,
+    pub enviroment: Rc<RefCell<Environment>>,
 }
 
 // example function
@@ -14,12 +14,12 @@ pub struct InterpReturn {
 
 impl Interpreter {
     pub fn new() -> Self {
-        let mut global_env = Enviroment::new();
+        let mut global_env = Environment::new();
         
         let f = LitVal::Callable { 
             ident: String::from("clock"), 
             arity: 0, 
-            func: Rc::new(|_, _| -> LitVal {
+            func: Rc::new(|_| -> LitVal {
                 let time = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs();
                 LitVal::Int(time as i32)
             })
@@ -32,12 +32,11 @@ impl Interpreter {
         }
     }
 
-    pub fn new_closure(enclosing: Rc<RefCell<Enviroment>>) -> Self {
+    pub fn for_closure(enclosing: Rc<RefCell<Environment>>) -> Self {
         Self {
-            enviroment: Rc::new(RefCell::new(Enviroment::new_local(enclosing)))
+            enviroment: Rc::new(RefCell::new(Environment::new_local(enclosing)))
         }
     }
-
 
     /// result < ok, err > 
     /// Ok(())          ... Successful interpreting of anything other than return
@@ -73,9 +72,10 @@ impl Interpreter {
                     // get the length beforehand, because the params are moved to the closure
                     let params_len = params.len();
 
+                    let parent_env = self.enviroment.clone();
                     // define the closure
-                    let func_impl = move |parent_env: Rc<RefCell<Enviroment>>, args: Vec<LitVal>| -> LitVal {
-                        let mut closure_interp = Interpreter::new_closure(parent_env);
+                    let func_impl = move |args: Vec<LitVal>| -> LitVal {
+                        let mut closure_interp = Interpreter::for_closure(parent_env.clone());
 
                         for (index, arg) in args.iter().enumerate() {
                             let param_ident = match params[index].kind() {
@@ -86,7 +86,7 @@ impl Interpreter {
                         }
                         
                         for i in 0..body.len() {
-                            match closure_interp.interpret(vec![*body[i].clone()]) {
+                            match closure_interp.interpret(vec![body[i].clone()]) {
                                 Ok(_) => {},
                                 Err(ret) => return ret.value
                             }
@@ -165,7 +165,7 @@ impl Interpreter {
                 }
                 Stmt::Block { statements } => {
                     let enclosing_env = self.enviroment.clone();
-                    let block_env = Enviroment::new_local(self.enviroment.clone());                    
+                    let block_env = Environment::new_local(self.enviroment.clone());                    
                     
                     self.enviroment = Rc::new(RefCell::new(block_env));
 

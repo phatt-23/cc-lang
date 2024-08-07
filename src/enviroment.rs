@@ -3,12 +3,12 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use crate::literal_value::LitVal;
 
 #[derive(Debug, Clone)]
-pub struct Enviroment {
+pub struct Environment {
     values: HashMap<String, LitVal>,
-    pub enclosing: Option<Rc<RefCell<Enviroment>>>,
+    pub enclosing: Option<Rc<RefCell<Environment>>>,
 }
 
-impl Enviroment {
+impl Environment {
     pub fn new() -> Self {
         Self {
             values: HashMap::new(),
@@ -16,7 +16,7 @@ impl Enviroment {
         }
     }
 
-    pub fn new_local(env: Rc<RefCell<Enviroment>>) -> Self {
+    pub fn new_local(env: Rc<RefCell<Environment>>) -> Self {
         Self {
             values: HashMap::new(),
             enclosing: Some(env),
