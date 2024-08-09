@@ -62,7 +62,7 @@ impl Parser {
 }
 
 impl Parser {
-    pub fn parse(&mut self, tokens: Vec<Token>) -> Vec<Stmt> {
+    pub fn parse(&mut self, tokens: Vec<Token>) -> Result<Vec<Stmt>, String> {
         self.tokens = tokens;
         self.tokens.reverse();
 
@@ -83,11 +83,18 @@ impl Parser {
         //     println!("[INFO][parser][stmt {}] {}", i, s);
         // }
 
-        for e in errs {
-            println!("[ERROR][parser][{}] {}", e.loc, e.msg);
+        // for e in errs {
+        //     println!("[ERROR][parser][{}] {}", e.loc, e.msg);
+        // }
+
+        if !errs.is_empty() {
+            for e in &errs {
+                println!("[ERROR][Parser][{}] {}", e.loc, e.msg);
+            }
+            return Err(String::from("[ERROR][Parser][***] Error occured while parsing."))
         }
 
-	    stmts
+        Ok(stmts)
     }
 
     // AST Syntax Stmt -----------------------------------
@@ -373,7 +380,7 @@ impl Parser {
                 Stmt::Block { statements } => statements,
                 _ => unreachable!("It must be a block, it starts with '{{'")
             };
-    
+            
             return Ok(Expr::new_lambda(params, body, right_paren))
         }
         
@@ -458,7 +465,6 @@ impl Parser {
 
     fn call_expression(&mut self) -> Result<Expr, LocErr> {
         let mut expr = self.primary_expression()?;
-
         loop {
             match self.peek().kind() {
                 TokenKind::LeftParen => {

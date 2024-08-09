@@ -17,8 +17,9 @@ fun fib_iter(n) {
     return a;
 }
 
-{
+print fib(10);
 
+{
     var recursive_fib = true;
 
     if (recursive_fib) {

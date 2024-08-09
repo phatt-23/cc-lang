@@ -1,7 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
-use crate::{enviroment::Environment, interpreter::Interpreter, literal_value::LitVal, loc_error::LocErr, statement::Stmt, token::{Token, TokenKind}};
+use std::hash::{Hash, Hasher};
+use crate::{literal_value::LitVal, statement::Stmt, token::Token};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Literal  { value: LitVal },
     Grouping { expr: Box<Expr> },
@@ -13,6 +13,60 @@ pub enum Expr {
 	Call     { callee: Box<Expr>, arguments: Vec<Expr>, right_paren: Token },
 	Lambda   { params: Vec<Token>, body: Vec<Stmt>, right_paren: Token }
 }
+
+impl Hash for Expr {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		match self {
+			Self::Assign { target, value } => {
+				0_u8.hash(state);
+				target.hash(state);
+				value.hash(state);
+			}
+			Self::Binary { operator, left, right } => {
+				1_u8.hash(state);
+				operator.hash(state);
+				left.hash(state);
+				right.hash(state);
+			}
+			Self::Call { callee, arguments, right_paren: _ } => {
+				2_u8.hash(state);
+				callee.hash(state);
+				arguments.hash(state);
+				// right_paren.hash(state);
+			}
+			Self::Grouping { expr } => {
+				3_u8.hash(state);
+				expr.hash(state);
+			}
+			Self::Lambda { params, body, right_paren: _ } => {
+				4_u8.hash(state);
+				params.hash(state);
+				body.hash(state);
+				// right_paren.hash(state);
+			}
+			Self::Literal { value } => {
+				5_u8.hash(state);
+				value.hash(state);
+			}
+			Self::Logical { operator, left, right } => {
+				6_u8.hash(state);
+				operator.hash(state);
+				left.hash(state);
+				right.hash(state);
+			}
+			Self::Unary { operator, expr } => {
+				7_u8.hash(state);
+				operator.hash(state);
+				expr.hash(state);
+			}
+			Self::Var { ident } => {
+				8_u8.hash(state);
+				ident.hash(state);
+			}
+		}
+	}
+} 
+
 
 impl Expr {
 	// Constructors
@@ -50,235 +104,6 @@ impl Expr {
 }
 
 impl Expr {
-    pub fn evaluate(&self, env: Rc<RefCell<Environment>>) -> Result<LitVal, LocErr> {
-    	match self {
-			Expr::Lambda { params, body, right_paren: _ } => {
-				println!("process lambda: {}", self);
-				let lambda_indentifier = format!("Lambda_{:x}", rand::random::<usize>());
-				let lambda_arity = params.len();
-				
-				// clone them to this scope for the closure to capture
-				let params = params.clone();
-				let body = body.clone();
-				// define the lambda
-				let lambda_impl = move |args: Vec<LitVal>| -> Result<LitVal, LocErr> {
-					let mut lambda_interp = Interpreter::for_closure(env.clone());
-
-					for (index, arg) in args.iter().enumerate() {
-						let param_ident = match params[index].kind() {
-							TokenKind::Identifier(ident) => ident.clone(),
-							_ => unreachable!("Parameter in the `params` vector should be Identifier.")
-						};
-						lambda_interp.enviroment.borrow_mut().define(param_ident, arg.clone());
-					}
-					
-					for i in 0..body.len() {
-						match lambda_interp.interpret(vec![body[i].clone()]) {
-							Ok(opt_ret) => match opt_ret {
-								Some(ret) => return Ok(ret.value),
-								None => return Ok(LitVal::Nil),
-							}
-							Err(err) => return Err(err)
-						}
-					}
-
-					return Ok(LitVal::Nil)
-				};
-
-				Ok(LitVal::Callable { 
-					ident: lambda_indentifier, 
-					arity: lambda_arity, 
-					func: Rc::new(lambda_impl)
-				})
-			}
-			Expr::Call { callee, arguments, right_paren } => {
-				// println!("Calling: {}", self);
-				let callable = callee.evaluate(env.clone())?;
-
-				match &callable {
-					LitVal::Callable { ident, arity, ref func } => {
-						if *arity as usize != arguments.len() {
-							return Err(LocErr::new(right_paren.loc(), format!("Callable `{}` expects {} arguments, but received {}. Arity check failed.", &ident, &arity, arguments.len())))
-						}
-
-						let mut evaled_args = vec![];
-						for arg in arguments {
-							let evaled_arg = arg.evaluate(env.clone())?;
-							evaled_args.push(evaled_arg);
-						}  
-
-						let call_result = func(evaled_args);
-						match call_result {
-							Ok(ok) => Ok(ok),
-							Err(err) => {
-								let fmtd_args: Vec<_> = arguments.iter().map(|arg| format!("{}", arg)).collect();
-								let fmtd_args = fmtd_args.join(", ");
-								
-								Err(LocErr::new(right_paren.loc(), format!("Failed execution of callable `{}` with ({}) as passed arguments.\n  [ERROR-from-callable][{}] {}", &ident, fmtd_args, err.loc, err.msg)))
-							}
-						}
-					}
-					any => Err(LocErr::new(right_paren.loc(), format!("Trying to call `{}` of value {}, which is not callable.", callee, any)))
-				}
-			}
-    	    Expr::Literal { value } => Ok(value.clone()),
-    	    Expr::Grouping { expr } => (*expr).evaluate(env),
-    	    Expr::Unary { operator, expr } => {
-        		let right = expr.evaluate(env)?;
-        		match (right, operator.kind()) {
-        		    (LitVal::Int(x), TokenKind::Minus) => Ok(LitVal::Int(-x)),
-        		    (LitVal::Double(x), TokenKind::Minus) => Ok(LitVal::Double(-x)),
-        		    (any, TokenKind::Minus) => Err(LocErr::new(operator.loc(), format!("Minus operator not implemented for {:?}", any))),
-        		    (any, TokenKind::Bang) => Ok(any.is_falsy()),
-        		    _ => todo!()
-        		}
-    	    }
-            Expr::Assign { target, value } => {
-                if let TokenKind::Identifier(i) = target.kind() {
-                    let v = value.evaluate(env.clone())?;
-                    return match env.as_ref().borrow_mut().assign(i, v.clone()) {
-                        Some(_) => Ok(v),
-                        None => Err(LocErr::new(target.loc(), format!("Can't assign {} to an undeclared target `{}`.", v, i)))
-                    }
-                }
-                unreachable!("{} Target must be an identifier", target.loc());
-            }
-            Expr::Var { ident } => {
-				if let TokenKind::Identifier(i) = ident.kind() {
-					match env.as_ref().borrow().get(i) {
-						Some(value) => return Ok(value.clone()),
-						None => return Err(LocErr::new(ident.loc(), format!("Variable with identifier `{}` is undeclared.", i)))
-					}
-				}
-				unreachable!("{} Totally fucked up. {:?} is not an identifier.", ident.loc(), ident.kind());
-            }
-            Expr::Logical { operator, left, right } => {
-                let left = left.evaluate(env.clone())?;
-                match operator.kind() {
-					TokenKind::And => {
-                        if left.is_truthy() == LitVal::Bool(false) {
-                            return Ok(left);
-                        }
-                    }
-                    TokenKind::Or => {
-                        if left.is_truthy() == LitVal::Bool(true) {
-                            return Ok(left)
-                        }
-                    }
-                    _ => unreachable!("Can't perform a logical evaluation with non-logical operations. {:?}", &self)
-                }
-
-                Ok(right.evaluate(env)?)
-            }
-    	    Expr::Binary { operator, left, right } => {
-        		use LitVal::*;
-        		let left = left.evaluate(env.clone())?;
-        		let right = right.evaluate(env)?;
-
-        		match operator.kind() {
-        		    TokenKind::Minus => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Double(x - y)),
-            			    (Int(x), Int(y)) => Ok(Int(x - y)),
-            			    (Double(x), Int(y)) => Ok(Int(x as i32 - y)),
-            			    (Int(x), Double(y)) => Ok(Int(x - y as i32)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical values.", operator.kind(), l, r)))
-            			}
-        		    }
-        		    TokenKind::Plus => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Double(x + y)),
-            			    (Int(x), Int(y)) => Ok(Int(x + y)),
-            			    (Double(x), Int(y)) => Ok(Int(x as i32 + y)),
-            			    (Int(x), Double(y)) => Ok(Int(x + y as i32)),
-            			    (String(x), String(y)) => Ok(String(format!("{}{}", x, y))),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical or concatenable.", operator.kind(), l, r)))
-            			}
-        		    }
-        		    TokenKind::Star => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Double(x * y)),
-            			    (Int(x), Int(y)) => Ok(Int(x * y)),
-            			    (Double(x), Int(y)) => Ok(Double(x * f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Double(f64::from(x) * y)),
-            			    (l, r) => {
-								Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", operator.kind(), l, r)))
-							}
-            			}
-        		    }
-        		    TokenKind::Slash => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Double(x / y)),
-            			    (Int(x), Int(y)) => Ok(Int(x / y)),
-            			    (Double(x), Int(y)) => Ok(Double(x / f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Double(f64::from(x) / y)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", operator.kind(), l, r)))
-            			}
-        		    }
-        		    TokenKind::Greater => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Bool(x > y)),
-            			    (Int(x), Int(y)) => Ok(Bool(x > y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x > f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) > y)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", operator.kind(), l, r)))
-            			}
-        		    }
-        		    TokenKind::Less => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Bool(x < y)),
-            			    (Int(x), Int(y)) => Ok(Bool(x < y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x < f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) < y)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", operator.kind(), l, r)))
-            			}
-        		    }
-        		    TokenKind::GreaterEqual => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Bool(x >= y)),
-            			    (Int(x), Int(y)) => Ok(Bool(x >= y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x >= f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) >= y)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", operator.kind(), l, r)))
-            			}
-        		    }
-        		    TokenKind::LessEqual => {
-            			match (left, right) {
-            			    (Double(x), Double(y)) => Ok(Bool(x <= y)),
-            			    (Int(x), Int(y)) => Ok(Bool(x <= y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x <= f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) <= y)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical.", operator.kind(), l, r)))
-            			}
-        		    }
-        		    TokenKind::EqualEqual => {
-            			match (left, right) {
-            			    (Bool(x), Bool(y)) => Ok(Bool(x == y)),
-            			    (Double(x), Double(y)) => Ok(Bool(x == y)),
-            			    (Int(x), Int(y)) => Ok(Bool(x == y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x == f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) == y)),
-            			    (String(x), String(y)) => Ok(Bool(x == y)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on {} and {}. Operands must be numerical or boolean", operator.kind(), l, r)))
-            			}
-        		    }
-        		    TokenKind::BangEqual => {
-            			match (left, right) {
-            			    (Bool(x), Bool(y)) => Ok(Bool(x != y)),
-            			    (Double(x), Double(y)) => Ok(Bool(x != y)),
-             			    (Int(x), Int(y)) => Ok(Bool(x != y)),
-            			    (Double(x), Int(y)) => Ok(Bool(x != f64::from(y))),
-            			    (Int(x), Double(y)) => Ok(Bool(f64::from(x) != y)),
-            			    (String(x), String(y)) => Ok(Bool(x != y)),
-            			    (l, r) => Err(LocErr::new(operator.loc(), format!("Can't perform {:?} operation on non-numerical or non-boolean values {} and {}", operator.kind(), l, r)))
-            			}
-        		    }
-        		    TokenKind::And | TokenKind::Or => unreachable!("Logical operations are not no be processed by the Binary branch."),
-        		    e => Err(LocErr::new(operator.loc(), format!("Undefined binary operator {}.", e)))
-        		}
-    	    }
-    	}
-    }
 
 }
 
@@ -362,5 +187,57 @@ impl std::fmt::Display for Expr {
 				write!(f, "({} {} {})", operator.kind(), left, right)
             }
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+	use crate::{parser::Parser, lexer::Lexer, statement::Stmt};
+	use std::hash::{DefaultHasher, Hash, Hasher};
+
+    #[test]
+    fn expr_is_hashable() {
+		let mut lexer = Lexer::new();
+		let mut parser = Parser::new();
+
+		let tokens = lexer.lex("nothing".to_string(), "12 + 45 * 90; 12 + 45 * 90;".to_string()).unwrap();
+		let stmts = parser.parse(tokens).unwrap();
+
+		let e0 = match stmts[0].clone() {
+			Stmt::Expression { expression } => expression,
+			_ => todo!()
+		};
+
+		let e1 = match stmts[1].clone() {
+			Stmt::Expression { expression } => expression,
+			_ => todo!()
+		};
+
+		let mut hasher = DefaultHasher::new();
+		e0.hash(&mut hasher);
+		let e0_hash = hasher.finish();
+		println!("{} :::: {}", e0, e0_hash);
+		
+		let mut hasher = DefaultHasher::new();
+		e1.hash(&mut hasher);
+		let e1_hash = hasher.finish();
+		println!("{} :::: {}", e1, e1_hash);
+		
+		let s0 = stmts[0].clone();
+		let mut hasher = DefaultHasher::new();
+		s0.hash(&mut hasher);
+		let s0_hash = hasher.finish();
+		println!("{} :::: {}", s0, s0_hash);
+		
+		let s1 = stmts[1].clone();
+		let mut hasher = DefaultHasher::new();
+		s1.hash(&mut hasher);
+		let s1_hash = hasher.finish();
+		println!("{} :::: {}", s1, s1_hash);
+		
+
+		assert_eq!(e0_hash, e1_hash);
+		assert_eq!(s0_hash, s1_hash);
     }
 }

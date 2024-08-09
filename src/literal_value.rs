@@ -1,5 +1,7 @@
 use std::rc::Rc;
+use std::hash::{Hash, Hasher};
 
+use crate::interpreter::InterpReturn;
 use crate::loc_error::LocErr;
 
 #[derive(Clone)]
@@ -12,8 +14,46 @@ pub enum LitVal {
 	Callable { 
 		ident: String, 
 		arity: usize,
-		func: Rc<dyn Fn(Vec<LitVal>) -> Result<LitVal, LocErr>>
+		func: Rc<dyn Fn(Vec<LitVal>) -> Result<Option<InterpReturn>, LocErr>>
 	},
+}
+
+impl PartialEq for LitVal {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bool(l), Self::Bool(r)) => l == r,
+            (Self::Callable { ident: l_ident, arity: l_arity, func: _ }, Self::Callable { ident: r_ident, arity: r_arity, func: _ }) => l_ident == r_ident && l_arity == r_arity,
+            (Self::Double(l), Self::Double(r)) => l == r,
+            (Self::Int(l), Self::Int(r)) => l == r,
+            (Self::Nil, Self::Nil) => true,
+            (Self::String(l), Self::String(r)) => l == r,
+            _ => false
+        }        
+    }
+}
+
+impl Eq for LitVal {
+    fn assert_receiver_is_total_eq(&self) {}
+}
+
+
+impl Hash for LitVal {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Bool(b) => b.hash(state),
+            Self::Callable { ident, arity, func: _ } => {
+                ident.hash(state);
+                arity.hash(state);
+            }
+            Self::Double(f) => {
+                let bits = f.to_bits();
+                bits.hash(state);
+            }
+            Self::Int(i) => i.hash(state),
+            Self::Nil => ().hash(state),
+            Self::String(s) => s.hash(state),
+        }
+    }
 }
 
 impl std::fmt::Debug for LitVal {
@@ -34,24 +74,10 @@ impl std::fmt::Display for LitVal {
 		match self {
 			LitVal::Int(v)    => write!(f, "{}", v),
 			LitVal::Double(v) => write!(f, "{}", v),
-			LitVal::String(v) => write!(f, "\"{}\"", v),
+			LitVal::String(v) => write!(f, "{}", v),
 			LitVal::Bool(v)   => write!(f, "{}", v),
 			LitVal::Nil       => write!(f, "nil"),
 			LitVal::Callable { ident, arity, func: _ } => write!(f, "{}/{}", ident, arity),
-        }
-    }
-}
-
-impl PartialEq for LitVal {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Int(v0), Self::Int(v1)) => v0 == v1,
-            (Self::Double(v0), Self::Double(v1)) => v0 == v1,
-            (Self::String(v0), Self::String(v1)) => v0 == v1,
-            (Self::Bool(v0), Self::Bool(v1)) => v0 == v1,
-            (Self::Nil, Self::Nil) => true,
-            (Self::Callable { ident: i0, arity: a0, func: _ }, Self::Callable { ident: i1, arity: a1, func: _ }) => i0 == i1 && a0 == a1,
-            (any0, any1) => panic!("Can't compare values of different types. Tried to compare {} with {}", any0, any1)
         }
     }
 }

@@ -1,3 +1,4 @@
+use crate::loc_error::LocErr;
 use crate::token::{Token, TokenKind};
 use crate::location::Location;
 
@@ -7,7 +8,7 @@ pub struct Lexer {
     line: usize,
     col: usize,
     current: usize,
-    err_reports: Vec<(Location, String)>,
+    err_reports: Vec<LocErr>,
 }
 
 impl Lexer {
@@ -22,7 +23,7 @@ impl Lexer {
         }
     }
 
-    pub fn lex(&mut self, filepath: String, source: String) -> Vec<Token> {
+    pub fn lex(&mut self, filepath: String, source: String) -> Result<Vec<Token>, String> {
         self.file = filepath;
         self.source = source;
         let mut tokens: Vec<Token> = Vec::new();
@@ -34,20 +35,24 @@ impl Lexer {
 
         tokens.push(Token::create(TokenKind::Eof, self.create_loc()));
         
+        
         // for t in &tokens {
         //     println!("[INFO][lexer][{}] {:?}", t.loc(), t.kind());
         // }
         
-        for e in &self.err_reports {
-            println!("[ERROR][lexer] {} {}", e.0, e.1);
+        if !self.err_reports.is_empty() {
+            for e in &self.err_reports {
+                println!("[ERROR][Lexer][{}] {}", e.loc, e.msg);
+            }
+            return Err(String::from("[ERROR][Lexer][***] Error occured while lexing."))
         }
 
-        tokens
+        Ok(tokens)
     }
 
     //Helpers ----------------------------------------------------
     fn report_err(&mut self, loc: Location, message: String) {
-        self.err_reports.push((loc, message));
+        self.err_reports.push(LocErr::new(&loc, message));
     }
 
     fn create_loc(&self) -> Location {
@@ -123,7 +128,11 @@ impl Lexer {
         }
 
         let loc = self.create_loc();
-        let sub_str = self.source.get(start..self.current).unwrap().to_string();
+ 
+        let start_byte_index = self.source.char_indices().nth(start).map(|(i, _)| i).expect("Start index out of bounds");
+        let end_byte_index = self.source.char_indices().nth(self.current).map(|(i, _)| i).expect("End index out of bounds");
+    
+        let sub_str = self.source[start_byte_index..end_byte_index].to_string();
 
         if is_real {
             let number = sub_str.parse::<f64>().unwrap_or_else(|_| {
@@ -145,7 +154,12 @@ impl Lexer {
         while self.peek().is_ascii_alphanumeric() || self.peek() == '_' {
             self.advance();
         }
-        let sub_str = self.source.get(start..self.current).unwrap();
+
+        let start_byte_index = self.source.char_indices().nth(start).map(|(i, _)| i).expect("Start index out of bounds");
+        let end_byte_index = self.source.char_indices().nth(self.current).map(|(i, _)| i).expect("End index out of bounds");
+    
+        let sub_str = &self.source[start_byte_index..end_byte_index];
+
         let kind = match sub_str {
             "class"  => TokenKind::Class,
             "fun"    => TokenKind::Fun,

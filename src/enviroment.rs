@@ -4,7 +4,7 @@ use crate::literal_value::LitVal;
 
 #[derive(Debug, Clone)]
 pub struct Environment {
-    values: HashMap<String, LitVal>,
+    pub values: HashMap<String, LitVal>,
     pub enclosing: Option<Rc<RefCell<Environment>>>,
 }
 
@@ -38,6 +38,24 @@ impl Environment {
 
         None
     }
+
+    pub fn get_at(&self, distance: &usize, name: &String) -> Option<LitVal> {
+        dbg!(distance, name);
+        return match self.ancestors(distance).borrow().clone().values.get(name) {
+            Some(val) => Some(val.clone()),
+            None => None
+        }
+    }
+
+    fn ancestors(&self, distance: &usize) -> Rc<RefCell<Environment>> {
+        let mut env = Rc::new(RefCell::new(self.clone()));
+        for _ in 0..*distance {
+            let enc = env.borrow().clone().enclosing.unwrap();
+            env = enc;
+        }
+        return env;
+    }
+
 
     pub fn assign(&mut self, name: &String, value: LitVal) -> Option<LitVal> {
         if self.values.contains_key(name) {

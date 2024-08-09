@@ -1,13 +1,13 @@
 fun f(a, b) {
     print "-- 1 --";
     print a;
-    
+
     print "-- 2 --";
     print b;
 
     print "-- 3 --";
     var ret = a * b;
-    
+  
     print "-- 4 --";
     print ret;
 
@@ -15,5 +15,22 @@ fun f(a, b) {
     return ret;
 }
 
+// f("hello", 3.34);
 f(2, 3);
-f("hello", 3);
+
+{
+    var b;
+    var d = b;
+    b = b;
+
+    // var temp = a;
+    var a;
+    // a = temp;
+}
+
+
+
+{
+    // g();
+
+}
