@@ -9,6 +9,10 @@ mod enviroment;
 mod loc_error;
 mod literal_value;
 mod resolver;
+mod callable_entity;
+mod runtime_entity;
+mod class_entity;
+mod function_entity;
 
 use std::{fs, io::{Error, Write}};
 use parser::Parser;
@@ -40,7 +44,7 @@ fn main() -> Result<(), Error> {
 
                 let mut main = Main::new();
                 match main.run(String::from("stdin"), input) {
-                    Ok(_) => return Ok(()),
+                    Ok(_) => {},
                     Err(msg) => {
                         println!("{}", msg);
                         break;
@@ -61,7 +65,7 @@ struct Main {
 }
 
 impl Main {
-    fn new()->Self{
+    fn new() -> Self {
         Self {
             lexer: Lexer::new(),
             parser: Parser::new(),
@@ -75,11 +79,11 @@ impl Main {
         let stmts = self.parser.parse(tokens)?;
         
         let resolved_locals = self.resolver.resolve(&stmts)?;
+        //dbg!(&resolved_locals);
         let interp_result = self.interpreter.interpret_with_resolved(resolved_locals, stmts);
-
         match interp_result {
             Ok(opt_ret) => match opt_ret {
-                Some(ret) => println!("[ERROR][Interpreter] {} Called `return` at global level with value {}.", ret.location, ret.value),
+                Some(ret) => println!("[ERROR][Interpreter] Called `return` at global level with value {}.", ret),
                 None => {}
             }
             Err(err) => println!("[ERROR][Interpreter][{}] {}", err.loc, err.msg)

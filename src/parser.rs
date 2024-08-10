@@ -22,19 +22,19 @@ impl Parser {
         self.tokens.last().unwrap()
     }
 
-    fn advance(&mut self) -> Token {
+    fn advance(&mut self) -> Result<Token, LocErr> {
         if !self.is_at_end() {
-            return self.tokens.pop().unwrap()
+            return Ok(self.tokens.pop().unwrap())
         } else {
-            panic!("Trying to pop/advance with no tokens left")
+            return Err(LocErr::new(self.peek().loc(), "Trying to pop/advance with no tokens left".to_string()))
         }
     }
 
     fn consume(&mut self, tok_kind: TokenKind, msg: String) -> Result<Token, LocErr> { 
         if *self.peek().kind() == tok_kind {
-            Ok(self.advance())
+            Ok(self.advance()?)
         } else {
-            Err(LocErr {loc: self.peek().loc().clone(), msg})
+            Err(LocErr::new(&self.peek().loc().clone(), msg))
         }
     }
     
@@ -43,20 +43,21 @@ impl Parser {
         if *self.peek().kind() == tok_kind {
             Ok(self.peek())
         } else {
-            Err(LocErr {loc: self.peek().loc().clone(), msg})
+            Err(LocErr::new(&self.peek().loc().clone(), msg))
         }
     }
 
-    fn synchronize(&mut self) {
+    fn synchronize(&mut self) -> Result<(), LocErr> {
         use TokenKind::*;
-        let mut previous = self.advance();
+        let mut previous = self.advance()?;
         while !self.is_at_end() {
             if matches!(previous.kind(), Semicolon) 
             || matches!(self.peek().kind(), Fun | Class | Var | For | If | While | Print | Return) {
-                return;
+                return Ok(());
             }
-            previous = self.advance();
+            previous = self.advance()?;
         }
+        Ok(())
     }
 
 }
@@ -74,18 +75,13 @@ impl Parser {
     	    	Ok(s) => stmts.push(s),
     	    	Err(err) => {
                     errs.push(err);
-    	    	    self.synchronize();
-	            }
+    	    	    let sync_res = self.synchronize();
+                    if let Err(err) = sync_res {
+                        return Err(format!("[ERROR][Synchronize][{}] {}", err.loc, err.msg))
+                    }
+                }
 	        }
 	    }
-
-        // for (i, s) in stmts.iter().enumerate() {
-        //     println!("[INFO][parser][stmt {}] {}", i, s);
-        // }
-
-        // for e in errs {
-        //     println!("[ERROR][parser][{}] {}", e.loc, e.msg);
-        // }
 
         if !errs.is_empty() {
             for e in &errs {
@@ -101,16 +97,40 @@ impl Parser {
     fn declaration(&mut self) -> Result<Stmt, LocErr> {
         match self.peek().kind() {
             TokenKind::Var => self.var_declaration(),
-            TokenKind::Fun => self.function_declaration(),
+            TokenKind::Fun => {
+                self.advance()?;
+                self.function_declaration()
+            }
+            TokenKind::Class => self.class_declaration(),
             _ => self.statement(),
         }
     }
     
     // Declarations
+    fn class_declaration(&mut self) -> Result<Stmt, LocErr> {
+        self.advance()?;
+        let ident = self.advance()?;
+        match ident.kind() {
+            TokenKind::Identifier(name) => {
+                self.consume(TokenKind::LeftBrace, format!("Expected left brace '{{' for {} class definition.", name))?;
+
+                let mut methods: Vec<Stmt> = Vec::new();
+                while !matches!(self.peek().kind(), TokenKind::RightBrace) && !self.is_at_end() {
+                    let method = self.function_declaration()?;
+                    methods.push(method);   
+                }
+                
+                self.consume(TokenKind::RightBrace, format!("Expected right brace '}}' to end {} class definition", name))?;
+
+                Ok(Stmt::new_class(ident, methods))
+            }
+            _ => Err(LocErr::new(self.peek().loc(), "Identifier in class declaration must be an identifier.".to_string()))
+        }
+    }
+
     fn function_declaration(&mut self) -> Result<Stmt, LocErr> {
-        self.advance();
         let ident = if let TokenKind::Identifier(_) = self.peek().kind() {
-                        self.advance().clone()
+                        self.advance()?.clone()
                     } else {
                         return Err(LocErr::new(self.peek().loc(), format!("Expected a function identifier but got {}.", self.peek().kind())))
                     };
@@ -125,7 +145,7 @@ impl Parser {
                 }
                 
                 match self.peek().kind() {
-                    TokenKind::Identifier(_) => params.push(self.advance().clone()),
+                    TokenKind::Identifier(_) => params.push(self.advance()?.clone()),
                     _ => return Err(LocErr::new(self.peek().loc(), format!("Expected an identifier as a parameter, instead found {}.", self.peek().kind())))
                 }
 
@@ -133,7 +153,7 @@ impl Parser {
                     break;
                 }
 
-                self.advance();
+                self.advance()?;
             }
         }
         self.consume(TokenKind::RightParen, "Expected right parenthesis ')' after parameters.".to_string())?;
@@ -149,12 +169,12 @@ impl Parser {
     }
 
     fn var_declaration(&mut self) -> Result<Stmt, LocErr> {
-        self.advance();
-        let ident = self.advance().clone();
+        self.advance()?;
+        let ident = self.advance()?.clone();
         match ident.kind() {
             TokenKind::Identifier(_name) => {
                 let expression = if matches!(self.peek().kind(), TokenKind::Equal) {
-                                    self.advance();
+                                    self.advance()?;
                                     self.expression()?
                                 } else {
                                     Expr::new_literal(LitVal::Nil)
@@ -172,20 +192,19 @@ impl Parser {
 
     // Statements
     fn statement(&mut self) -> Result<Stmt, LocErr> {
-        // TODO: Change this to advance()
 	    match self.peek().kind() {
-            TokenKind::LeftBrace => self.block_statement(),
-	        TokenKind::Print => self.print_statement(),
-            TokenKind::If => self.if_statement(),
-            TokenKind::While => self.while_statement(),
-            TokenKind::For => self.for_statement(),
-            TokenKind::Return => self.return_statement(),
-	        _ => self.expression_statement(),
+            TokenKind::LeftBrace    => self.block_statement(),
+	        TokenKind::Print        => self.print_statement(),
+            TokenKind::If           => self.if_statement(),
+            TokenKind::While        => self.while_statement(),
+            TokenKind::For          => self.for_statement(),
+            TokenKind::Return       => self.return_statement(),
+	        _                       => self.expression_statement(),
 	    }
     }
 
     fn return_statement(&mut self) -> Result<Stmt, LocErr> {
-        let keyword = self.advance().clone();
+        let keyword = self.advance()?.clone();
         
 
         let value = match self.peek().kind() {
@@ -199,13 +218,13 @@ impl Parser {
     }
 
     fn for_statement(&mut self) -> Result<Stmt, LocErr> {
-        self.advance();
-        /* for (initializer ; condition ; increment) {}
-         *  initializer = variable_declaration | expression | nothing
-         *  condition = nothing (true) | expression
-         *  increment = expression 
-        */
-        /*   Same semantics (sugar):
+        self.advance()?;
+        /*
+         * for (initializer ; condition ; increment) {}
+         *      initializer = variable_declaration | expression | nothing
+         *      condition   = nothing (true) | expression
+         *      increment   = expression 
+         *  Same semantics (sugar):
          *      for (var i = 0; i < 10; i = i + 1) {
          *          ...
          *      }
@@ -224,7 +243,7 @@ impl Parser {
         self.consume(TokenKind::LeftParen, "Expected left parenthesis '(' after `for`.".to_string())?;
         let initializer = match self.peek().kind() {
             TokenKind::Semicolon => {
-                self.advance();
+                self.advance()?;
                 None
             }
             TokenKind::Var => {
@@ -269,28 +288,26 @@ impl Parser {
     }
 
     fn while_statement(&mut self) -> Result<Stmt, LocErr> {
-        self.advance();
+        self.advance()?;
 
         self.consume(TokenKind::LeftParen, "Expected left parenthesis '(' after `while` keyword.".to_string())?;
         let condition = self.expression()?;
         self.consume(TokenKind::RightParen, "Expected right parenthesis ')' to close the condition expression of `while` keyword.".to_string())?;
-        // TODO: Catch this error and say that while requires a body
         let body = Box::from(self.statement()?);
 
         Ok(Stmt::new_while(condition, body))
     }
     
     fn if_statement(&mut self) -> Result<Stmt, LocErr> {
-        self.advance();
+        self.advance()?;
         self.consume(TokenKind::LeftParen, "Expected left parenthesis '(' after `if` keyword.".to_string())?;
 
         let condition = self.expression()?;
         
         self.consume(TokenKind::RightParen, "Expected right parenthesis ')' to close the condition expression of `if` keyword.".to_string())?;
-        // TODO: Catch this error and report that if needs a then body
         let then_b = Box::from(self.statement()?);
         let else_b = if matches!(self.peek().kind(), TokenKind::Else) {
-            self.advance();
+            self.advance()?;
             Some(Box::from(self.statement()?))
         } else {None};
         
@@ -298,7 +315,7 @@ impl Parser {
     }
     
     fn block_statement(&mut self) -> Result<Stmt, LocErr> {
-        self.advance();
+        self.advance()?;
         let mut stmts: Vec<Stmt> = Vec::new();
 
         while !matches!(self.peek().kind(), TokenKind::RightBrace) && !self.is_at_end() {
@@ -306,12 +323,12 @@ impl Parser {
             stmts.push(stmt);
         }
 
-        self.consume(TokenKind::RightBrace, "Expected a right brace '}' denoting end of a block statement.".to_string())?;
+        self.consume(TokenKind::RightBrace, "Expected a right brace '}}' denoting end of a block statement.".to_string())?;
         Ok(Stmt::new_block(stmts))
     }
 
     fn print_statement(&mut self) -> Result<Stmt, LocErr> {
-        self.advance();
+        self.advance()?;
         let expr = self.expression()?;
         self.consume(TokenKind::Semicolon, "Expected a semicolon ';' after expression denoting end of print statement.".to_string())?;
         Ok(Stmt::new_print(expr))
@@ -327,27 +344,26 @@ impl Parser {
     fn expression(&mut self) -> Result<Expr, LocErr> {
         self.assignment_expression()
     }
-
     
     fn assignment_expression(&mut self) -> Result<Expr, LocErr> {
         let expr = self.lambda_expression()?;
         
         if matches!(self.peek().kind(), TokenKind::Equal) {
-            let equal = self.advance();
+            let equal = self.advance()?;
             let value = self.assignment_expression()?;
-            if let Expr::Var {ident} = expr {
-                return Ok(Expr::new_assign(ident, value))
+            return match expr {
+                Expr::Var {ident}           => Ok(Expr::new_assign(ident, value)),
+                Expr::Get { object, ident } => Ok(Expr::new_set(*object, ident, value)),
+                any                         => Err(LocErr::new(equal.loc(), format!("Invalid assignment target {}.", any)))
             }
-            return Err(LocErr::new(equal.loc(), format!("Invalid assignment target {}.", expr)))
         }
         
         Ok(expr)
     }
     
     fn lambda_expression(&mut self) -> Result<Expr, LocErr> {
-        // TODO: Maybe introduce a separate `lambda` keyword.
         if matches!(self.peek().kind(), TokenKind::Fun) {
-            self.advance();
+            self.advance()?;
             
             self.consume(TokenKind::LeftParen, "Lambda expression expected left parenthesis '(' after `fun` keyword.".to_string())?;
 
@@ -361,7 +377,7 @@ impl Parser {
                     }
                     
                     match self.peek().kind() {
-                        TokenKind::Identifier(_) => params.push(self.advance().clone()),
+                        TokenKind::Identifier(_) => params.push(self.advance()?.clone()),
                         _ => return Err(LocErr::new(self.peek().loc(), format!("Expected an identifier as a parameter, instead found {}.", self.peek().kind())))
                     }
     
@@ -369,7 +385,7 @@ impl Parser {
                         break;
                     }
     
-                    self.advance();
+                    self.advance()?;
                 }
             }
             let right_paren = self.consume(TokenKind::RightParen, "Expected right parenthesis ')' after list of parameters.".to_string())?.clone();
@@ -390,7 +406,7 @@ impl Parser {
     fn logic_or_expression(&mut self) -> Result<Expr, LocErr> {
         let mut expr = self.logic_and_expression()?;
         while matches!(self.peek().kind(), TokenKind::Or) {
-            let op = self.advance().clone();
+            let op = self.advance()?.clone();
             let right = self.logic_and_expression()?;
             expr = Expr::new_logical(expr, op, right);
         }
@@ -401,7 +417,7 @@ impl Parser {
     fn logic_and_expression(&mut self) -> Result<Expr, LocErr> {
         let mut expr = self.equality_expression()?;
         while matches!(self.peek().kind(), TokenKind::And) {
-            let op = self.advance().clone();
+            let op = self.advance()?.clone();
             let right = self.equality_expression()?;
             expr = Expr::new_logical(expr, op, right);
         }
@@ -413,7 +429,7 @@ impl Parser {
         let mut expr = self.comparison_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), BangEqual | EqualEqual) {
-            let op = self.advance();
+            let op = self.advance()?;
             let right = self.comparison_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
@@ -424,7 +440,7 @@ impl Parser {
         let mut expr = self.term_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), Greater | GreaterEqual | Less | LessEqual) {
-            let op = self.advance();
+            let op = self.advance()?;
             let right = self.term_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
@@ -435,7 +451,7 @@ impl Parser {
         let mut expr = self.factor_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), Minus | Plus) {
-            let op = self.advance();
+            let op = self.advance()?;
             let right = self.factor_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
@@ -446,7 +462,7 @@ impl Parser {
         let mut expr = self.unary_expression()?;
         use TokenKind::*;
         while matches!(self.peek().kind(), Star | Slash) {
-            let op = self.advance();
+            let op = self.advance()?;
             let right = self.unary_expression()?;
             expr = Expr::new_binary(expr, op, right);
         }
@@ -456,7 +472,7 @@ impl Parser {
     fn unary_expression(&mut self) -> Result<Expr, LocErr> {
         use TokenKind::*;
         if matches!(self.peek().kind(), Bang | Minus) {
-            let op = self.advance();
+            let op = self.advance()?;
             let expr = self.unary_expression()?;
             return Ok(Expr::new_unary(op, expr))
         }
@@ -468,8 +484,18 @@ impl Parser {
         loop {
             match self.peek().kind() {
                 TokenKind::LeftParen => {
-                    self.advance();
+                    self.advance()?;
                     expr = self.finish_call_expression(expr)?;
+                }
+                TokenKind::Dot => {
+                    self.advance()?;
+
+                    let name = self.advance()?;
+                    if !matches!(name.kind(), TokenKind::Identifier(_)) {
+                        return Err(LocErr::new(name.loc(), format!("The getter's name must be an identifier.")))
+                    }
+                    
+                    expr = Expr::new_get(expr, name)
                 }
                 _ => break,
             }
@@ -495,7 +521,7 @@ impl Parser {
                 if !matches!(self.peek().kind(), TokenKind::Comma) {
                     break;
                 }
-                self.advance();
+                self.advance()?;
             }
         }
         
@@ -505,45 +531,39 @@ impl Parser {
     }
 
     fn primary_expression(&mut self) -> Result<Expr, LocErr> {
-        match self.peek().kind() {
+        let tok = self.advance()?;
+        match tok.kind() {
             TokenKind::False => {
-                self.advance();
                 Ok(Expr::new_literal(LitVal::Bool(false)))
             }
             TokenKind::True => {
-                self.advance();
                 Ok(Expr::new_literal(LitVal::Bool(true)))
             }
             TokenKind::Nil => {
-                self.advance();
                 Ok(Expr::new_literal(LitVal::Nil))
             }
             TokenKind::Int(v) => {
                 let v = *v;
-                self.advance();
                 Ok(Expr::new_literal(LitVal::Int(v)))
             }
             TokenKind::Double(v) => {
                 let v = *v;
-                self.advance();
                 Ok(Expr::new_literal(LitVal::Double(v)))
             }
             TokenKind::String(v) => {
                 let v = v.clone();
-                self.advance();
                 Ok(Expr::new_literal(LitVal::String(v)))
             }
             TokenKind::LeftParen => {
-                self.advance();
                 let expr = self.expression()?;
                 self.consume(TokenKind::RightParen, format!("{} Expected ')' after expression, but found {:?}!", self.peek().loc(), self.peek().kind()))?;
                 Ok(Expr::new_grouping(expr))
             }
             TokenKind::Var => {
-                Ok(Expr::Var { ident: self.advance().clone() })
+                Ok(Expr::Var { ident: tok.clone() })
             }
             TokenKind::Identifier(_i) => {
-                Ok(Expr::Var { ident: self.advance().clone() })
+                Ok(Expr::Var { ident: tok.clone() })
             }
             _ => {
                 if matches!(self.peek().kind(), TokenKind::Eof) {

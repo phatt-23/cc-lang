@@ -1,34 +1,34 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::literal_value::LitVal;
+use crate::runtime_entity::RuntimeEntity;
 
 #[derive(Debug, Clone)]
 pub struct Environment {
-    pub values: HashMap<String, LitVal>,
+    pub entities: HashMap<String, RuntimeEntity>,
     pub enclosing: Option<Rc<RefCell<Environment>>>,
 }
 
 impl Environment {
     pub fn new() -> Self {
         Self {
-            values: HashMap::new(),
+            entities: HashMap::new(),
             enclosing: None,
         }
     }
 
     pub fn new_local(env: Rc<RefCell<Environment>>) -> Self {
         Self {
-            values: HashMap::new(),
+            entities: HashMap::new(),
             enclosing: Some(env),
         }
     }
     
-    pub fn define(&mut self, name: String, value: LitVal) {
-        self.values.insert(name, value);
+    pub fn define(&mut self, name: String, value: RuntimeEntity) {
+        self.entities.insert(name, value);
     }
 
-    pub fn get(&self, name: &String) -> Option<LitVal> {
-        if let Some(val) = self.values.get(name) {
+    pub fn get(&self, name: &String) -> Option<RuntimeEntity> {
+        if let Some(val) = self.entities.get(name) {
             return Some(val.clone());
         }
 
@@ -39,9 +39,8 @@ impl Environment {
         None
     }
 
-    pub fn get_at(&self, distance: &usize, name: &String) -> Option<LitVal> {
-        dbg!(distance, name);
-        return match self.ancestors(distance).borrow().clone().values.get(name) {
+    pub fn get_at(&self, distance: &usize, name: &String) -> Option<RuntimeEntity> {
+        return match self.ancestors(distance).borrow().entities.get(name) {
             Some(val) => Some(val.clone()),
             None => None
         }
@@ -57,13 +56,13 @@ impl Environment {
     }
 
 
-    pub fn assign(&mut self, name: &String, value: LitVal) -> Option<LitVal> {
-        if self.values.contains_key(name) {
-            return self.values.insert(name.clone(), value);
+    pub fn assign(&mut self, name: &String, entity: RuntimeEntity) -> Option<RuntimeEntity> {
+        if self.entities.contains_key(name) {
+            return self.entities.insert(name.clone(), entity);
         }
 
         if let Some(ref enclosing) = self.enclosing {
-            return enclosing.borrow_mut().assign(name, value);
+            return enclosing.borrow_mut().assign(name, entity);
         }
 
         None

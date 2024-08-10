@@ -1,0 +1,14 @@
+class Person {
+	sayHi() {
+		print "hello";
+	}
+}
+
+print Person;
+
+var p0 = Person();
+
+print p0;
+
+p0.age = 65;
+print p0.age;

@@ -10,7 +10,7 @@ pub struct Resolver {
     current_function: FunctionType,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Copy, Clone)]
 enum FunctionType {
     Function, 
     None,
@@ -54,15 +54,23 @@ impl Resolver {
 
     fn resolve_stmt(&mut self, statement: &Stmt) -> Result<(), LocErr> {
         match statement {
-            Stmt::Block { statements } => self.resolve_block_stmt(statements)?,
-            Stmt::Expression { expression } => self.resolve_expr(expression)?,
-            Stmt::Function { ident, params, body } => self.resolve_function_stmt(ident, params, body)?,
-            Stmt::If { condition, then_stmt, else_stmt } => self.resolve_if_stmt(condition, then_stmt, else_stmt)?,
-            Stmt::Print { expression } => self.resolve_print_stmt(expression)?,
-            Stmt::Return { keyword, value } => self.resolve_return_stmt(keyword, value)?,
-            Stmt::Var { ident, expression } => self.resolve_var_stmt(ident, expression)?,
-            Stmt::While { condition, body } => self.resolve_while_stmt(condition, body)?,
+            Stmt::Class { ident, methods }                  => self.resolve_class_stmt(ident, methods)?,
+            Stmt::Block { statements }                      => self.resolve_block_stmt(statements)?,
+            Stmt::Expression { expression }                 => self.resolve_expr(expression)?,
+            Stmt::Function { ident, params, body }          => self.resolve_function_stmt(ident, params, body)?,
+            Stmt::If { condition, then_stmt, else_stmt }    => self.resolve_if_stmt(condition, then_stmt, else_stmt)?,
+            Stmt::Print { expression }                      => self.resolve_print_stmt(expression)?,
+            Stmt::Return { keyword, value }                 => self.resolve_return_stmt(keyword, value)?,
+            Stmt::Var { ident, expression }                 => self.resolve_var_stmt(ident, expression)?,
+            Stmt::While { condition, body }                 => self.resolve_while_stmt(condition, body)?,
         }
+        Ok(())
+    }
+
+    fn resolve_class_stmt(&mut self, ident: &Token, methods: &Vec<Stmt>) -> Result<(), LocErr> {
+        self.declare(ident)?;
+        self.define(ident)?;
+
         Ok(())
     }
 
@@ -101,6 +109,7 @@ impl Resolver {
         self.define(ident)?;
 
         self.begin_scope();
+        let enclosing_func_type = self.current_function;
         self.current_function = FunctionType::Function;
         
         for param in params {
@@ -110,7 +119,7 @@ impl Resolver {
         self.resolve_block_stmt(body)?;
 
         self.end_scope();
-        self.current_function = FunctionType::None;
+        self.current_function = enclosing_func_type;
 
         Ok(())
     }
@@ -140,6 +149,15 @@ impl Resolver {
 
     fn resolve_expr(&mut self, expression: &Expr) -> Result<(), LocErr> {
         match expression {
+            Expr::Set { object, ident: _, value } => {
+                self.resolve_expr(object)?;
+                self.resolve_expr(value)?;
+                Ok(())
+            }
+            Expr::Get { object, ident: _ } => {
+                self.resolve_expr(object)?;
+                Ok(())
+            }
             Expr::Assign { target, value } => {
                 let name = match target.kind() {
                     TokenKind::Identifier(name) => name,
@@ -200,7 +218,6 @@ impl Resolver {
         for index in self.scopes.len() - 1..=0 {
             if self.scopes.get(index).unwrap().contains_key(ident) {
                 self.locals.insert(expression.clone(), self.scopes.len() - 1 - index);
-                dbg!(&self.locals);
                 return Ok(())
             }
         }
@@ -216,7 +233,6 @@ impl Resolver {
             TokenKind::Identifier(name) => name.clone(),
             _ => unreachable!("Should be identifier")
         };
-        dbg!(&name);
 
         if self.scopes.last_mut().unwrap().contains_key(&name) {
             return Err(LocErr::new(ident.loc(), "There already exists a variable with this name within the scope.".to_string()))

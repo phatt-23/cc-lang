@@ -11,6 +11,7 @@ pub enum Stmt {
     While       { condition: Expr, body: Box<Stmt> },
     Function    { ident: Token, params: Vec<Token>, body: Vec<Stmt> },
     Return      { keyword: Token, value: Option<Expr> },
+    Class       { ident: Token, methods: Vec<Stmt> } // methods: Vec<Stmt::Function>
 }
 
 impl Stmt {
@@ -45,11 +46,19 @@ impl Stmt {
     pub fn new_return(keyword: Token, value: Option<Expr>) -> Self {
         Self::Return {  keyword, value }
     }
+
+    pub fn new_class(ident: Token, methods: Vec<Stmt>) -> Self {
+        Self::Class { ident, methods }
+    }
 }
 
 impl std::fmt::Display for Stmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Stmt::Class { ident, methods } => {
+                dbg!(ident, methods);
+                todo!();
+            }
             Stmt::Return { keyword: _, value } => {
                 if let Some(value) = value {
                     return write!(f, "(:return {})", value)

@@ -11,7 +11,9 @@ pub enum Expr {
     Assign   { target: Token, value: Box<Expr> },
     Logical  { operator: Token, left: Box<Expr>, right: Box<Expr> },
 	Call     { callee: Box<Expr>, arguments: Vec<Expr>, right_paren: Token },
-	Lambda   { params: Vec<Token>, body: Vec<Stmt>, right_paren: Token }
+	Lambda   { params: Vec<Token>, body: Vec<Stmt>, right_paren: Token },
+	Get      { object: Box<Expr>, ident: Token },
+	Set      { object: Box<Expr>, ident: Token, value: Box<Expr> }
 }
 
 impl Hash for Expr {
@@ -63,6 +65,17 @@ impl Hash for Expr {
 				8_u8.hash(state);
 				ident.hash(state);
 			}
+			Self::Get { object, ident } => {
+				9_u8.hash(state);
+				object.hash(state);
+				ident.hash(state);	
+			}
+			Self::Set { object, ident, value } => {
+				10_u8.hash(state);
+				object.hash(state);
+				ident.hash(state);
+				value.hash(state);
+			}
 		}
 	}
 } 
@@ -101,6 +114,14 @@ impl Expr {
 	pub fn new_lambda(params: Vec<Token>, body: Vec<Stmt>, right_paren: Token) -> Self {
 		Self::Lambda { params, body, right_paren } 
 	}
+
+	pub fn new_get(object: Expr, ident: Token) -> Self {
+		Self::Get { object: Box::from(object), ident }
+	}
+
+	pub fn new_set(object: Expr, ident: Token, value: Expr) -> Self {
+		Self::Set { object: Box::from(object), ident, value: Box::from(value) }
+	}
 }
 
 impl Expr {
@@ -115,7 +136,6 @@ impl LitVal {
     	    LitVal::String(x) => LitVal::Bool(x.is_empty()),
     	    LitVal::Bool(x) => LitVal::Bool(!x),
     	    LitVal::Nil => LitVal::Bool(true),
-			LitVal::Callable { ident, arity, func: _ } => todo!("Can you even call this on a callable? {} {}", ident, arity),
     	}
     }
 
@@ -126,7 +146,6 @@ impl LitVal {
     	    LitVal::String(x) 	=> LitVal::Bool(!x.is_empty()),
     	    LitVal::Bool(x) 	=> LitVal::Bool(*x),
     	    LitVal::Nil 		=> LitVal::Bool(false),
-			LitVal::Callable { ident, arity, func: _ } => todo!("Can you even call this on a callable? {} {}", ident, arity),
     	}
     }
 }
@@ -134,6 +153,13 @@ impl LitVal {
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+			Self::Set { object, ident, value } => {
+				dbg!(object, ident, value);
+				todo!()
+			}
+			Self::Get { object, ident } => {
+				write!(f, "\\inst {} .get {}", *object, ident)
+			}
 			Self::Lambda { params, body, right_paren: _} => {
 				let formatted_params: Vec<String> = 
 					params
