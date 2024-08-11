@@ -4,11 +4,19 @@ class Person {
 	}
 }
 
-print Person;
+{
+	print "INFO: Creating a new instance of Person class";
+	var p0 = Person();
 
-var p0 = Person();
+	print "INFO: Printing the instance";
+	print p0;
 
-print p0;
+	print "INFO: Setting `age` for the Person p0 and printing";
+	print p0.age = 65;
 
-p0.age = 65;
-print p0.age;
+	print "INFO: Printing `p0`";
+	print p0;
+
+	print "INFO: Printing p0's age";
+	print p0.age;
+}

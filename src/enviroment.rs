@@ -4,7 +4,8 @@ use crate::runtime_entity::RuntimeEntity;
 
 #[derive(Debug, Clone)]
 pub struct Environment {
-    pub entities: HashMap<String, RuntimeEntity>,
+    // TODO: Make this not be accessed by a string but by an expression, it's more flexible and will accompass more complicated assignment targets than just those that are a single identifier.
+    pub entities:  HashMap<String, RuntimeEntity>,
     pub enclosing: Option<Rc<RefCell<Environment>>>,
 }
 
@@ -63,6 +64,18 @@ impl Environment {
 
         if let Some(ref enclosing) = self.enclosing {
             return enclosing.borrow_mut().assign(name, entity);
+        }
+
+        None
+    }
+
+    pub fn remove(&mut self, name: &String) -> Option<RuntimeEntity> {
+        if self.entities.contains_key(name) {
+            return self.entities.remove(name);
+        }
+
+        if let Some(ref enclosing) = self.enclosing {
+            return enclosing.borrow_mut().remove(name);
         }
 
         None

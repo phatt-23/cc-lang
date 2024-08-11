@@ -37,22 +37,24 @@ impl Callable for Class {
     fn arity(&self) -> usize { 0 }
     fn call(&self, args: Vec<RuntimeEntity>) -> Result<Option<RuntimeEntity>, LocErr> { 
         assert!(args.is_empty(), "The default constructor doesn't take in any arguments.");
-        Ok(Some(RuntimeEntity::ClassInstance(
-            ClassInstance { name: self.name.clone(), fields: HashMap::new() }
-        )))
+        let inst = ClassInstance { name: self.name.clone(), fields: HashMap::new() };
+        
+        // dbg!(std::ptr::addr_of!(inst));
+
+        Ok(Some(RuntimeEntity::ClassInstance(inst)))
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ClassInstance {
-    pub name: String,
+    pub name:   String,
     pub fields: HashMap<String, RuntimeEntity>,
 }
 
 impl ClassInstance {
     pub fn get(&mut self, name: &String) -> Result<RuntimeEntity, String> {
-        dbg!(&self.fields, std::ptr::addr_of!(self));
-        println!("---------------------------");
+        // dbg!(&self.fields, std::ptr::addr_of!(self));
+        // println!("---------------------------");
 
         match self.fields.get(name) {
             Some(field) => Ok(field.clone()),
@@ -61,11 +63,11 @@ impl ClassInstance {
     }
     
     pub fn set(&mut self, name: String, value: RuntimeEntity) -> Option<RuntimeEntity> {
-        println!("inserting {name} with value {value} to map");
         let opt = self.fields.insert(name, value);
 
-        dbg!(&self.fields, std::ptr::addr_of!(self));
-        println!("---------------------------");
+        // dbg!(&self.fields);
+        // dbg!(std::ptr::addr_of!(self));
+        // println!("---------------------------");
         
         opt
     }
@@ -79,6 +81,6 @@ impl IntoRuntimeEntity for ClassInstance {
 
 impl std::fmt::Display for ClassInstance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\\inst {}", self.name)
+        write!(f, "\\inst {} {:?}", self.name, self.fields)
     }
 }

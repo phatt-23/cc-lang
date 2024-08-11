@@ -67,7 +67,7 @@ impl Resolver {
         Ok(())
     }
 
-    fn resolve_class_stmt(&mut self, ident: &Token, methods: &Vec<Stmt>) -> Result<(), LocErr> {
+    fn resolve_class_stmt(&mut self, ident: &Token, _methods: &Vec<Stmt>) -> Result<(), LocErr> {
         self.declare(ident)?;
         self.define(ident)?;
 
